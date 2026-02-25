@@ -1,0 +1,14 @@
+# --- Motor de Automatización y Scraping ---
+undetected-chromedriver
+selenium
+requests
+Pillow
+
+# --- Documentación Profesional (MkDocs) ---
+mkdocs>=1.5.0
+mkdocs-material>=9.0.0
+mkdocstrings[python]>=0.20.0
+
+# --- Extensiones de Markdown ---
+pymdown-extensions
+pygments

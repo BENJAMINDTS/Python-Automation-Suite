@@ -1,0 +1,58 @@
+
+site_name: BenjaminDTS - Image Downloader
+site_description: Automatización de descarga de imágenes para ERP.
+
+theme:
+  name: material
+  language: es
+  palette:
+    # Configuración de colores (Modo Oscuro)
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: Cambiar a modo claro
+    # Configuración de colores (Modo Claro)
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: Cambiar a modo oscuro
+  features:
+    - navigation.sections
+    - navigation.tabs
+    - content.code.copy
+    - content.code.annotate
+
+plugins:
+  - search
+  - mkdocstrings:
+      enabled: true
+      default_handler: python
+      handlers:
+        python:
+          paths: ["."] # IMPORTANTE: Busca el script en la carpeta actual
+          options:
+            show_root_heading: true
+            show_source: true         # Muestra el botón "Source" para ver tu código
+            show_category_heading: true
+            show_root_full_path: false
+            docstring_style: google   # Formato de tus comentarios (Args/Returns)
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+
+nav:
+  - Inicio: index.md
+  - Documentación del Código: funciones.md
