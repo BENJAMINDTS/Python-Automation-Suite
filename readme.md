@@ -39,3 +39,50 @@ cd nombre-del-repo
 # Instalar dependencias
 pip install -r requirements.txt
 ```
+
+# 🐍 Python Automation Suite - BenjaminDTS
+
+Welcome to my centralized automation repository. Here I share a collection of scripts designed to optimize workflows, data processing, and web scraping tasks, focusing on efficiency and code readability.
+
+## 🛠️ Repository Philosophy
+
+All scripts included in this suite adhere to a strict quality standard:
+
+* **Documentation**: Commented code following **pydoc** standards for integration with MkDocs.
+
+* **Modularity**: Tools ready to be integrated into other projects or run independently.
+
+* **Interface**: Use of clear configurations and error handling for production environments.
+
+## 📖 Interactive Documentation
+
+This repository uses **MkDocs Material** to generate a web interface with the technical reference for each module (functions, classes, and parameters).
+
+To launch the documentation locally:
+
+1. Install the dependencies: `pip install -r requirements.txt`
+2. Run the server: `python -m mkdocs serve`
+3. Navigate to: `http://127.0.0.1:8000`
+
+## 📂 Project Structure
+
+* `/docs`: Source files for the documentation in Markdown.
+
+*.py`: Ready-to-use automation scripts.
+
+* `mkdocs.yml`: Configuration for the documentation engine.
+
+* `requirements.txt`: Dependencies required for the environment.
+
+## 🚀 Quick Installation
+
+```bash
+# Clone the repository
+git clone [https://github.com/your-username/repo-name.git](https://github.com/your-username/repo-name.git)
+
+# Access the directory
+cd repo-name
+
+# Install dependencies
+pip install -r requirements.txt
+```
