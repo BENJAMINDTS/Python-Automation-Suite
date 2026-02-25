@@ -12,10 +12,10 @@ Optimiza: Redimensiona y comprime las imágenes para su uso directo en web.
 
 ## 🛠️ Requisitos e Instalación
 
-# 1. Navegador
+### 1. Navegador
 El script está preconfigurado para Opera GX. Si utilizas otro navegador, consulta la sección de Personalización.
 
-# 2. Dependencias de Python
+### 2. Dependencias de Python
 Instala las librerías necesarias ejecutando:
 
 ``` bash
@@ -48,12 +48,12 @@ Ejemplo visual de los datos:
 ## ⚙️ Guía de Adaptación (Uso en otros casos)
 Si necesitas mover este script a otro entorno o usarlo para productos distintos, ajusta lo siguiente en el código:
 
-# 1. Cambiar la ruta del Navegador
+### 1. Cambiar la ruta del Navegador
 En la función configuracion_opera_benjamin(), modifica la variable ruta_gx.
 
 Para Chrome estándar, apunta a: C:\Program Files\Google\Chrome\Application\chrome.exe.
 
-# 1. Adaptar el Contexto Comercial
+### 1. Adaptar el Contexto Comercial
 Si tu sector no es industrial/ferretero, edita la función contexto_comercial(texto). Por ejemplo, para una tienda de moda:
 
 ```Python
@@ -77,3 +77,86 @@ Resultado: El script creará una carpeta llamada PRODUCTOS_WEB/. Si una imagen y
 Autor: BenjaminDTS.
 
 Documentación: El código está íntegramente comentado siguiendo los estándares de pydoc para su posterior exportación a manuales técnicos.
+
+### 🤖 Image Scraper Automation (Opera GX Edition)
+Advanced automation module developed by BenjaminDTS for extracting, cleaning, and bulk downloading product images using Selenium, Undetected Chromedriver, and the Bing search engine.
+
+## 📋 Description
+This script is designed for e-commerce or inventory management departments that need to populate their databases with real images. The system not only searches for the term but also:
+
+Cleans the noise: Removes extraneous characters from corrupted ERP exports.
+
+Adds context: Injects business keywords to avoid irrelevant results (such as PDFs or photos of cars).
+
+Optimizes: Resizes and compresses images for direct use on the web.
+
+## 🛠️ Requirements and Installation
+
+### 1. Browser
+The script is pre-configured for Opera GX. If you use another browser, see the Customization section.
+
+### 2. Python Dependencies
+Install the necessary libraries by running:
+
+``` bash
+pip install undetected-chromedriver selenium requests Pillow
+```
+
+## 📄 CSV Specifications
+
+For the bot to process the data without errors, the input file must follow these rules:
+
+### Technical Format
+
+* **Name:** `ARTICLE.csv`
+* **Location:** Same folder as the script.
+
+* **Delimiter:** Semicolon (`;`).
+
+* **Encoding:** `UTF-8 with BOM` (recommended if exporting from Excel).
+
+Column Structure
+The script performs intelligent header detection, but it is recommended to use:
+
+| Header | Required | Function |
+| :--- | :---: | :--- |
+| **CODE** | **YES** | Used as the final file name (e.g., `12345.jpg`). |
+**NAME** | **YES** | Product description for the search. |
+**BRAND NAME** | No | Helps filter the search (also detects "BRAND" or "MANUFACTURER"). |
+
+Visual example of the data:
+![alt text](image.png)
+
+## ⚙️ Adaptation Guide (Use in other cases)
+If you need to move this script to another environment or use it for different products, adjust the following in the code:
+
+### 1. Change the Browser Path
+In the configuration_opera_benjamin() function, modify the path_gx variable.
+
+For standard Chrome, point to: C:\Program Files\Google\Chrome\Application\chrome.exe.
+
+### 1. Adapt the Business Context
+If your sector is not industrial/hardware, edit the function `contexto_comercial(texto)`. For example, for a fashion store:
+
+```Python
+if "PANTALON" in texto:
+context = "clothing fashion photography catalog"
+3. Browser Version
+In `specificar_version(opciones)`, the parameter `version_main=143` is fixed. If the script gives a "Driver version" error, update this number to match your current Opera/Chrome version or remove it to make it automatic.
+
+```
+
+## 🚀 How to get it up and running
+Prepare your ARTICLE.csv file with the desired products.
+
+Run the script:
+
+```Bash
+python scraper_imagenes.py
+```
+Result: The script will create a folder called `PRODUCTOS_WEB/`. If an image already exists, the crawler will automatically skip it to save bandwidth.
+
+## 📝 Authorship and Documentation Notes
+Author: BenjaminDTS
+
+Documentation: The code is fully commented following pydoc standards for later export to technical manuals.
