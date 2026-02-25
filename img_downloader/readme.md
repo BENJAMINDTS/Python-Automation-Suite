@@ -48,12 +48,12 @@ Ejemplo visual de los datos:
 ## ⚙️ Guía de Adaptación (Uso en otros casos)
 Si necesitas mover este script a otro entorno o usarlo para productos distintos, ajusta lo siguiente en el código:
 
-### 1. Cambiar la ruta del Navegador
+### Cambiar la ruta del Navegador
 En la función configuracion_opera_benjamin(), modifica la variable ruta_gx.
 
 Para Chrome estándar, apunta a: C:\Program Files\Google\Chrome\Application\chrome.exe.
 
-### 1. Adaptar el Contexto Comercial
+### Adaptar el Contexto Comercial
 Si tu sector no es industrial/ferretero, edita la función contexto_comercial(texto). Por ejemplo, para una tienda de moda:
 
 ```Python
@@ -130,12 +130,12 @@ Visual example of the data:
 ## ⚙️ Adaptation Guide (Use in other cases)
 If you need to move this script to another environment or use it for different products, adjust the following in the code:
 
-### 1. Change the Browser Path
+### Change the Browser Path
 In the configuration_opera_benjamin() function, modify the path_gx variable.
 
 For standard Chrome, point to: C:\Program Files\Google\Chrome\Application\chrome.exe.
 
-### 1. Adapt the Business Context
+### Adapt the Business Context
 If your sector is not industrial/hardware, edit the function `contexto_comercial(texto)`. For example, for a fashion store:
 
 ```Python
