@@ -1,4 +1,4 @@
-### 🤖 Image Scraper Automation (Opera GX Edition)
+# 🤖 Image Scraper Automation (Opera GX Edition)
 Módulo avanzado de automatización desarrollado por BenjaminDTS para la extracción, limpieza y descarga masiva de imágenes de productos utilizando Selenium, Undetected Chromedriver y el motor de búsqueda Bing.
 
 ## 📋 Descripción
@@ -78,7 +78,7 @@ Autor: BenjaminDTS.
 
 Documentación: El código está íntegramente comentado siguiendo los estándares de pydoc para su posterior exportación a manuales técnicos.
 
-### 🤖 Image Scraper Automation (Opera GX Edition)
+# 🤖 Image Scraper Automation (Opera GX Edition)
 Advanced automation module developed by BenjaminDTS for extracting, cleaning, and bulk downloading product images using Selenium, Undetected Chromedriver, and the Bing search engine.
 
 ## 📋 Description
