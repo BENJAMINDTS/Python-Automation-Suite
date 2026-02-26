@@ -1,0 +1,10 @@
+# ==========================================================
+# IMPORTANTE: El script principal funciona con librerías 
+# nativas de Python (xmlrpc.client, csv, base64, os).
+# No requiere instalación de dependencias para ejecutarse.
+# ==========================================================
+
+# Dependencias opcionales (Solo para generar la documentación web con MkDocs):
+mkdocs>=1.5.0
+mkdocs-material>=9.0.0
+mkdocstrings[python]>=0.24.0
