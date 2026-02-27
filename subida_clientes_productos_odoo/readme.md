@@ -57,3 +57,72 @@ El script mostrará un registro en tiempo real por consola de cada acción: crea
 
 * El campo contable inyectado para los días de pago utiliza el parámetro técnico `nb_days` y el valor `percent` al 100%, garantizando la compatibilidad con Odoo 15, 16 y 17.
 * Los registros se documentan automáticamente en el campo `comment` (Notas Internas) con las fechas de alta originales para preservar el histórico de la empresa.
+
+# Advanced Contact Importer for Odoo
+**Author:** BenjaminDTS
+
+Python module designed for the bulk, intelligent, and secure migration of data from Excel/CSV files (Customers and Suppliers) to the Odoo ERP system using its XML-RPC API.
+
+## 🚀 Main Features
+
+* **Intelligent Role Merging:** Prevents duplicate records. If a Contact exists as a Customer and is processed again as a Supplier, the script merges both profiles (`customer_rank` and `supplier_rank`) into the same record.
+
+* **Automatic Payment Term Management:** Reads the text from the Excel file (e.g., "GIRO 60") and automatically creates/assigns the accounting rule in Odoo (`account.payment.term`). Includes a security filter that ignores anomalous numbers or incorrect IBANs.
+
+* **Fallback:** If Odoo rejects a contact because the VAT number is invalid according to tax regulations, the script retrieves the VAT number, saves it in Internal Notes, and creates the record anyway to avoid losing the data.
+
+* **Automatic Archiving:** Detects if the `DATE OF TERMINATION` cell contains data and automatically archives the contact (`active = False`).
+
+* **Regional Encoding:** Prepared with `latin-1` encoding to process Spanish characters (ñ, accents) from older Excel exports without errors.
+
+## ⚙️ Prerequisites
+
+Make sure you have Python installed on your system. The script uses native libraries, so it is not necessary to install external dependencies (`pip install`).
+
+* `xmlrpc.client` (Native)
+* `csv` (Native)
+* `re` (Native)
+
+## 📂 File Structure
+
+For the script to work correctly, the files must be in the same directory:
+
+```text
+/project_directory
+│-- contact_importer.py
+
+│-- Clients.csv (Delimited by ';')
+
+│-- SUPPLIERS.csv (Delimited by ',' or ';')
+
+│-- README.md
+
+```
+
+## 🔧 Configuration
+
+Before running, open `contact_importer.py` and edit the following variables in the file header with your environment data:
+
+```python
+URL = '[https://yourdomain.com](https://yourdomain.com)'
+DB = 'database_name'
+USERNAME = 'your_email@example.com'
+PASSWORD = 'your_password_or_api_key'
+
+```
+
+## 💻 Usage
+
+Open your terminal or command prompt, navigate to the project folder, and run:
+
+```bash
+python contact_importer.py
+```
+
+The script will display a real-time console log of each action: creations `[+]`, role updates `[UPDT]`, security alerts `[!]`, and errors `[-]`.
+
+
+## 📝 Technical Notes
+
+* The injected accounting field for paydays uses the technical parameter `nb_days` and the value `percent` at 100%, ensuring compatibility with Odoo 15, 16, and 17.
+* Records are automatically documented in the `comment` field (Internal Notes) with the original creation dates to preserve the company's historical data.
