@@ -1,3 +1,0 @@
-# Documentación del Código
-
-::: subida
