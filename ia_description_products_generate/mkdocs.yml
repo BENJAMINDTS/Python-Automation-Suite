@@ -1,0 +1,22 @@
+site_name: Procesador IA de Inventarios (Groq)
+site_author: BenjaminDTS
+site_description: Módulo avanzado de procesamiento de lenguaje natural y rotación automática para la generación masiva de descripciones.
+
+theme:
+  name: material
+  palette:
+    primary: teal
+    accent: deep purple
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_root_heading: true
+            show_source: true
+            show_signature_annotations: true
+
+nav:
+  - Inicio: index.md

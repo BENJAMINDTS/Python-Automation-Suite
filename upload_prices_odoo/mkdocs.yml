@@ -1,0 +1,21 @@
+site_name: Documentación de Importación Odoo
+site_author: BenjaminDTS
+site_description: Herramientas de migración y actualización masiva para Odoo ERP.
+
+theme:
+  name: material
+  palette:
+    primary: indigo
+    accent: blue
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_root_heading: true
+            show_source: true
+
+nav:
+  - Inicio: index.md

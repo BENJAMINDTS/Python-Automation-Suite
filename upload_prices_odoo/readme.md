@@ -1,0 +1,161 @@
+# 🏷️ Odoo Dual Price Updater (XML-RPC Edition)
+
+Módulo avanzado de automatización desarrollado por **BenjaminDTS** para la actualización masiva de precios base y listas de precios (Pricelists) en Odoo utilizando su API XML-RPC.
+
+## 📋 Descripción
+
+Este script está diseñado para actualizar miles de tarifas en segundos sin saturar el servidor del ERP. Implementa un sistema de inyección dual ("Híbrido") y un modo "Turbo-Caché" en memoria RAM:
+* **Doble Inyección de Precios:** Actualiza el precio contable oficial (Base Imponible / Sin IVA) en el núcleo del producto y, simultáneamente, crea una regla visual con el precio final (Con IVA) en una Tarifa B2C dedicada.
+* **Turbo-Caché (Anti-Timeouts):** Descarga el mapa del catálogo completo de Odoo a la memoria RAM en 2 segundos, evitando realizar decenas de miles de peticiones de lectura por internet.
+* **Auto-Detección de Formatos:** Detecta automáticamente si el CSV usa comas (`,`) o puntos y comas (`;`), y elimina los caracteres invisibles (BOM) generados por Excel.
+* **Indicador de Progreso:** Muestra por consola el avance de la lectura cada 100 líneas para monitorizar catálogos enormes.
+
+## 🛠️ Requisitos e Instalación
+
+El núcleo del script está escrito en **Python puro**, utilizando exclusivamente librerías de la biblioteca estándar (`xmlrpc.client`, `csv`). 
+
+**No es necesario instalar dependencias externas para ejecutar la actualización.**
+
+*(Opcional)* Para compilar y visualizar la web de documentación técnica (`pydoc` / MkDocs) incluida en el código fuente:
+```bash
+pip install mkdocs mkdocs-material mkdocstrings[python]
+
+```
+
+## 📄 Especificaciones del CSV
+
+Para que el script procese los datos correctamente, el archivo de entrada debe tener las siguientes características:
+
+**Formato Técnico**
+
+* **Nombre por defecto:** `Tarifas de artículos.csv` (Configurable).
+* **Ubicación:** Misma carpeta que el script.
+* **Delimitador:** `,` o `;` (Detectado automáticamente).
+* **Codificación:** UTF-8 o UTF-8-BOM.
+
+**Estructura de Columnas**
+El script buscará las siguientes cabeceras (cuyos nombres exactos se pueden cambiar en la configuración):
+
+| Cabecera | Requerido | Función |
+| --- | --- | --- |
+| **Artículo** | SÍ | Referencia interna en Odoo (`default_code`) para localizar el producto. |
+| **Nombre artículo** | NO | Utilizado puramente a nivel visual para los logs de la consola. |
+| **Tarifa PVP sin Iva** | SÍ | Se inyecta como `list_price` en la pestaña Información General del producto. |
+| **Tarifa PVP** | SÍ | Se inyecta como `fixed_price` dentro de la Lista de Precios B2C. |
+
+## ⚙️ Guía de Configuración
+
+Antes de ejecutar el script en tu entorno, edita las siguientes variables globales en la cabecera del archivo `precios.py`:
+
+1. **Credenciales y Conexión:**
+
+* `URL`: La dirección de tu instancia (ej: *<http://localhost:8069>* o *<https://www.google.com/search?q=https://tu-odoo.com>*).
+* `DB`: El nombre exacto de la base de datos.
+* `USERNAME` / `PASSWORD`: Correo de administrador y su contraseña (o API Key).
+
+1. **Mapeo de Datos:**
+
+* `ARCHIVO_TARIFAS`: Nombre del archivo CSV a procesar.
+* `COLUMNA_SIN_IVA`: Nombre exacto de la columna del Excel para la base imponible.
+* `COLUMNA_CON_IVA`: Nombre exacto de la columna para el PVP final.
+* `NOMBRE_TARIFA_ODOO`: Nombre de la Lista de Precios que el script creará/usará en Odoo.
+
+## 🚀 Cómo ponerlo en marcha
+
+1. Coloca tu archivo CSV en el mismo directorio que el script.
+2. Ejecuta el script desde la terminal:
+
+```bash
+python precios.py
+
+```
+
+**Resultado:** Verás cómo el sistema carga la caché y comienza a procesar el Excel. Al terminar, mostrará un resumen detallado con los precios base actualizados, las reglas B2C inyectadas y los productos omitidos.
+
+## 📝 Notas de Autoría y Documentación
+
+* **Autor:** BenjaminDTS.
+* **Documentación:** Código escrito bajo la filosofía *Clean Code*. Las funciones están aisladas para cumplir un único propósito (Single Responsibility) y documentadas bajo los estándares de `pydoc` para su renderizado web con MkDocs.
+
+---
+
+# 🏷️ Odoo Dual Price Updater (XML-RPC Edition)
+
+Advanced automation module developed by **BenjaminDTS** for the massive update of base prices and Pricelists in Odoo using its XML-RPC API.
+
+## 📋 Description
+
+This script is designed to update thousands of rates in seconds without overwhelming the ERP server. It implements a dual injection system ("Hybrid") and a RAM "Turbo-Cache" mode:
+
+* **Dual Price Injection:** Updates the official accounting price (Tax Excluded) in the product core and simultaneously creates a visual rule with the final price (Tax Included) in a dedicated B2C Pricelist.
+* **Turbo-Cache (Anti-Timeouts):** Downloads the entire Odoo catalog map to RAM in 2 seconds, avoiding tens of thousands of read requests over the internet.
+* **Auto-Format Detection:** Automatically detects whether the CSV uses commas (`,`) or semicolons (`;`), and strips invisible BOM characters generated by Excel.
+* **Progress Indicator:** Displays reading progress in the console every 100 lines to monitor massive catalogs.
+
+## 🛠️ Requirements and Installation
+
+The core of the script is written in **pure Python**, using exclusively standard library modules (`xmlrpc.client`, `csv`).
+
+**No external dependencies need to be installed to run the update.**
+
+*(Optional)* To compile and view the technical documentation web (`pydoc` / MkDocs) included in the source code:
+
+```bash
+pip install mkdocs mkdocs-material mkdocstrings[python]
+
+```
+
+## 📄 CSV Specifications
+
+For the script to process the data correctly, the input file must have the following features:
+
+**Technical Format**
+
+* **Default Name:** `Tarifas de artículos.csv` (Configurable).
+* **Location:** Same folder as the script.
+* **Delimiter:** `,` or `;` (Auto-detected).
+* **Encoding:** UTF-8 or UTF-8-BOM.
+
+**Column Structure**
+The script will look for the following headers (the exact names can be changed in the settings):
+
+| Header | Required | Function |
+| --- | --- | --- |
+| **Artículo** (Code) | YES | Internal reference in Odoo (`default_code`) to locate the product. |
+| **Nombre artículo** (Name) | NO | Used purely visually for console logs. |
+| **Tarifa PVP sin Iva** (Tax Excl.) | YES | Injected as `list_price` in the General Information tab of the product. |
+| **Tarifa PVP** (Tax Incl.) | YES | Injected as `fixed_price` inside the B2C Pricelist. |
+
+## ⚙️ Configuration Guide
+
+Before running the script in your environment, edit the following global variables at the top of the `precios.py` file:
+
+1. **Credentials and Connection:**
+
+* `URL`: The address of your instance (e.g., *<http://localhost:8069>* or *<https://www.google.com/search?q=https://your-odoo.com>*).
+* `DB`: The exact database name.
+* `USERNAME` / `PASSWORD`: Administrator email and password (or API Key).
+
+1. **Data Mapping:**
+
+* `ARCHIVO_TARIFAS`: Name of the CSV file to process.
+* `COLUMNA_SIN_IVA`: Exact name of the Excel column for the base price.
+* `COLUMNA_CON_IVA`: Exact name of the Excel column for the final PVP.
+* `NOMBRE_TARIFA_ODOO`: Name of the Pricelist that the script will create/use in Odoo.
+
+## 🚀 How to get it up and running
+
+1. Place your CSV file in the same directory as the script.
+2. Run the script from the terminal:
+
+```bash
+python precios.py
+
+```
+
+**Result:** You will see the system load the cache and begin processing the Excel file. Upon completion, it will display a detailed summary of updated base prices, injected B2C rules, and skipped products.
+
+## 📝 Authorship and Documentation Notes
+
+* **Author:** BenjaminDTS.
+* **Documentation:** Code written under the *Clean Code* philosophy. Functions are isolated to fulfill a single purpose (Single Responsibility) and documented under `pydoc` standards for web rendering with MkDocs.
