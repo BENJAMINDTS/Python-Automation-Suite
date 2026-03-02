@@ -1,0 +1,13 @@
+site_name: Documentación de Importación Odoo
+site_author: BenjaminDTS
+
+theme:
+  name: material
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: true
