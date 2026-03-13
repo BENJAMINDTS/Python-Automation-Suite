@@ -7,7 +7,7 @@ import os
 import time
 import csv
 import re
-import getpass
+import json
 import requests
 from PIL import Image
 from io import BytesIO
@@ -15,331 +15,388 @@ from io import BytesIO
 try:
     import undetected_chromedriver as uc
     from selenium.webdriver.common.by import By
-except ImportError:
-    print("[!] Error: Asegúrate de tener instalado undetected-chromedriver y selenium")
+except ImportError as err:
+    # Por qué: Evita fallos silenciosos si faltan dependencias clave en el entorno de ejecución.
+    print(f"[!] Error de importación: {err}. Asegúrate de instalar undetected-chromedriver y selenium.")
 
 
-def ejecutor_imagenes_opera(archivo_csv='ARTÍCULOS.csv'):
+# ==============================================================================
+# NIVEL 1: ORQUESTADORES PRINCIPALES (Criticidad Alta)
+# Define el flujo de ejecución. Su responsabilidad es delegar tareas.
+# ==============================================================================
+
+def main(input_csv='input_products.csv', output_dir='output_images', log_file='download_errors.log'): #Aqui se pueden modificar los nombres de los archivos de entrada y salida
     """
-    Motor principal de scrapeo con detección exacta de NOMBRE MARCA.
-    Prepara el directorio, configura Opera GX, lee el CSV y arranca el ciclo de búsqueda.
-
-    Args:
-        archivo_csv (str): Ruta del archivo CSV a procesar. Por defecto 'ARTÍCULOS.csv'.
+    Punto de entrada principal del motor de scraping.
+    Por qué: Orquesta la creación del entorno, inicialización del navegador y el ciclo de búsqueda de forma modular.
     """
-    output_dir = 'PRODUCTOS_WEB'
-    if not os.path.exists(output_dir): 
-        os.makedirs(output_dir)
+    prepare_directory(output_dir)
+    prepare_log(log_file)
 
-    print("--- INICIANDO ROBOT OPERA GX v143 [BenjaminDTS] ---")
-    
-    opciones = configuracion_opera_benjamin()
+    print("--- INICIANDO ROBOT DE DESCARGA (SISTEMA ANTI-403 + LOG) [BenjaminDTS] ---")
+    browser_options = configure_browser()
+    driver = None
     
     try:
-        driver = especificar_version(opciones)
-        
-        # Usamos utf-8-sig para leer a la perfección los CSV de Excel
-        with open(archivo_csv, mode='r', encoding='utf-8-sig') as f:
-            reader = csv.DictReader(f, delimiter=';')
-            cabeceras = [c.strip().upper() for c in reader.fieldnames]
-            reader.fieldnames = cabeceras
-            
-            # Determinamos las columnas correctas para NOMBRE, CÓDIGO y MARCA
-            col_nombre = 'NOMBRE' if 'NOMBRE' in cabeceras else cabeceras[1]
-            col_codigo = cabeceras[0]      
-            col_marca = determinar_columna_marca(cabeceras)
-            
-            recorrer_csv(output_dir, driver, reader, col_nombre, col_codigo, col_marca)
-
+        validated_path = resolve_file_path(input_csv)
+        driver = initialize_browser(browser_options)
+        process_catalog(validated_path, output_dir, log_file, driver)
     except Exception as e:
-        print(f"\n[!] Error crítico del sistema: {e}")
+        # Por qué: Centralización de errores críticos del proceso global para evitar cierres abruptos.
+        print(f"\n[!] Error crítico del sistema: {type(e).__name__} - {e}")
     finally:
-        try:
-            driver.quit()
-        except:
-            pass
-        print("--- NAVEGADOR CERRADO AUTOMÁTICAMENTE ---")
+        close_browser_safely(driver)
 
 
-def configuracion_opera_benjamin():
+def process_catalog(csv_file, output_dir, log_file, driver):
     """
-    Configura el navegador con la ruta exacta de Opera GX.
-
-    Returns:
-        uc.ChromeOptions: Objeto con las opciones de inicialización del navegador.
+    Maneja la lectura del dataset y la validación de sus cabeceras.
+    Por qué: Aísla la capa de manipulación de datos (I/O) de las acciones del navegador web.
     """
-    usuario = getpass.getuser()
-    ruta_gx = rf"C:\Users\{usuario}\AppData\Local\Programs\Opera GX\opera.exe"
+    with open(csv_file, mode='r', encoding='utf-8-sig') as f:
+        reader = csv.DictReader(f, delimiter=',')
+        
+        if not reader.fieldnames:
+            raise ValueError("El archivo CSV está vacío o sus cabeceras son ilegibles.")
+            
+        headers = [c.strip().upper() for c in reader.fieldnames]
+        reader.fieldnames = headers
+        
+        if len(headers) < 2:
+            raise ValueError(f"El CSV requiere al menos 2 columnas. Cabeceras detectadas: {headers}")
+        
+        iterate_and_search(output_dir, log_file, driver, reader)
+
+
+def iterate_and_search(output_dir, log_file, driver, reader):
+    """
+    Iterador principal de filas extraídas con orquestación de búsqueda.
+    Por qué: Transforma los datos crudos en variables de búsqueda inyectables y omite los ya procesados.
+    """
+    for row in reader:
+        item_id = normalize_numeric_id(row.get('REF', ''))
+        raw_name = row.get('LABEL', '').strip()
+        brand = filter_generic_brands(row.get('MARCA', '').strip())
+        category = row.get('CATEGORIA', '').strip()
+                
+        if not item_id or not raw_name: 
+            continue
+                
+        safe_id = sanitize_filename(item_id)
+        img_path = os.path.join(output_dir, f"{safe_id}.jpg")
+        
+        if os.path.exists(img_path): 
+            continue 
+                
+        clean_name = normalize_product_name(raw_name)
+        search_query = re.sub(r'\s+', ' ', f"{clean_name} {brand} {category}".strip())
+                
+        print(f"[*] Buscando [{item_id}]: {search_query[:40]}...", end=" ", flush=True)
+        download_search_engine_image(driver, img_path, search_query, item_id, log_file)
+
+
+# ==============================================================================
+# NIVEL 2: CAPA DE INFRAESTRUCTURA WEB (Criticidad Media-Alta)
+# Maneja la comunicación externa (Red, Selenium, DOM, HTTP).
+# ==============================================================================
+
+def download_search_engine_image(driver, img_path, query, item_id, log_file):
+    """
+    Controla el flujo de navegación HTTP y la interacción con los selectores del DOM.
+    Por qué: Encapsula la lógica de red para no abortar el ciclo completo si una página falla.
+    """
+    try:
+        navigate_to_search(driver, query)
+        dom_elements = driver.find_elements(By.CSS_SELECTOR, "a.iusc")
+        hd_url, thumb_url = extract_image_urls(dom_elements)
+        manage_download_strategy(img_path, hd_url, thumb_url, item_id, log_file)
+    except Exception as e:
+        # Por qué: Se captura a nivel de componente para registrar la caída temporal del DOM.
+        print(f"Error procesando DOM: {e}")
+    time.sleep(1)
+
+
+def navigate_to_search(driver, query):
+    """
+    Formatea la URL y acciona la petición GET del driver web.
+    Por qué: Aísla la carga principal para facilitar futuras migraciones de motor de búsqueda.
+    """
+    search_url = f"https://www.bing.com/images/search?q={query}+producto"
+    driver.get(search_url)
+    time.sleep(2)
+
+
+def extract_image_urls(elements):
+    """
+    Extrae la URL original (HD) y la URL en caché del buscador (miniatura).
+    Por qué: Almacena la versión de caché como fallback inmediato ante un error 403 o enlace roto.
+    """
+    for element in elements:
+        metadata = element.get_attribute("m")
+        if metadata:
+            try:
+                data = json.loads(metadata)
+                url_hd = data.get("murl")
+                url_thumb = data.get("turl")
+                if url_hd and url_hd.startswith("http"):
+                    return url_hd, url_thumb
+            except json.JSONDecodeError as e:
+                # Por qué: Previene caídas si la estructura interna del DOM del motor cambia de formato.
+                print(f"Fallo decodificando metadatos: {e}")
+    return None, None
+
+
+def manage_download_strategy(img_path, hd_url, thumb_url, item_id, log_file):
+    """
+    Orquesta la cascada de intentos de descarga (Principal -> Fallback).
+    Por qué: Maximiza la tasa de éxito recurriendo a resoluciones menores si el host principal bloquea el bot.
+    """
+    if not hd_url:
+        print("Sin resultados.")
+        return
+
+    success_hd = attempt_download(img_path, hd_url, "HD")
+    if not success_hd and thumb_url:
+        print("-> Rescate con miniatura...", end=" ")
+        success_thumb = attempt_download(img_path, thumb_url, "Miniatura")
+        if success_thumb:
+            log_fallback_download(item_id, log_file)
+
+
+def attempt_download(img_path, target_url, label):
+    """
+    Lanza el request HTTP inyectando cabeceras y gestionando el estado binario.
+    Por qué: El Referer y el User-Agent simulan navegación humana, eludiendo bloqueos por hotlink (Anti-403).
+    """
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+        "Referer": "https://www.bing.com/"
+    }
+    try:
+        response = requests.get(target_url, headers=headers, timeout=12)
+        if response.status_code == 200:
+            return process_and_save_image(img_path, response.content, label)
+        
+        print(f"Bloqueo {response.status_code} ({label})", end=" ")
+        return False
+    except Exception as e:
+        # Por qué: Captura timeouts y cortes de conexión del host remoto.
+        print(f"Error de red ({label})", end=" ")
+        return False
+
+
+# ==============================================================================
+# NIVEL 3: LÓGICA DE NEGOCIO Y TRANSFORMACIÓN (Criticidad Media)
+# Reglas de dominio. Purifican los datos en bruto para convertirlos en entidades.
+# ==============================================================================
+
+def normalize_product_name(text):
+    """
+    Orquesta la normalización del campo de nombre principal.
+    Por qué: Aplica Clean Code delegando las transformaciones específicas a subfunciones aisladas.
+    """
+    text = str(text).upper().split('..')[0]
+    text = fix_corrupt_characters(text)
+    seo_context = generate_seo_context(text)
+    return clean_and_join_text(text, seo_context)
+
+
+def fix_corrupt_characters(text):
+    """
+    Mapea y corrige codificaciones rotas provenientes de la base de datos.
+    Por qué: Reconstruye caracteres esenciales para que el motor de búsqueda comprenda la palabra.
+    """
+    replacements = {
+        'Ì': 'I', 'Ï': 'I', 'Ö': 'O', 'Ä': 'A', '—': '-', 'Í': 'I', 
+        'Ã': 'A', '±': '-', 'Â': 'A', 'Ç': 'C', 'Ñ': 'Ñ', 'Ó': 'O', 
+        'Ú': 'U', 'É': 'E', 'Ü': 'U', 'À': 'A'
+    }
+    for broken_char, valid_char in replacements.items():
+        text = text.replace(broken_char, valid_char)
+    return text
+
+
+def generate_seo_context(text):
+    """
+    Calcula dinámicamente palabras clave de contexto según la familia del producto.
+    Por qué: Prioriza que el motor devuelva fotografías reales de producto comercial y no diagramas.
+    """
+    if "SIERRA" in text or "MOTOSIERRA" in text: return "herramienta motosierra comprar"
+    if "MOTOAZADA" in text or "MOTOCULTOR" in text: return "maquinaria agricola comprar"
+    if "BOMBA" in text: return "agua fontaneria comprar"
+    if "LITIO" in text or "GRASA" in text: return "bote grasa lubricante comprar"
+    if "ADBLUE" in text: return "garrafa adblue comprar"
+    if "REFRIG" in text or "ANTICONGELANTE" in text: return "garrafa anticongelante refrigerante motor comprar"
+    return "comprar"
+
+
+def clean_and_join_text(text, context):
+    """
+    Elimina caracteres especiales y unidades de medida abreviadas.
+    Por qué: Limpia la 'basura' propia de inventarios ERP dejando un título orgánico e indexable.
+    """
+    text = re.sub(r'[%.\(\)]', ' ', text)
+    noise_words = {
+        'LTS', 'GR', 'REFRIG', 'INCLUIDA', 'SI', 'APORTACIO', 
+        'APORTACION', 'CON', 'X', 'KGS', 'CC', 'ML'
+    }
+    valid_words = [word for word in text.split() if word not in noise_words and len(word) > 1]
+    return f"{' '.join(valid_words).strip()} {context}".strip()
+
+
+def filter_generic_brands(brand_raw):
+    """
+    Depura las marcas de fabricante genéricas que no aportan valor semántico.
+    Por qué: Optimiza la búsqueda en el motor al eliminar ruido que empeora los resultados.
+    """
+    ignored_brands = {
+        'MARCAS VARIAS', 'MARCA VARIA', 'GENERICO', 'GENÉRICO', 
+        'GENERICA', 'GENÉRICA', 'SIN MARCA', 'AFT'
+    }
+    return '' if brand_raw.upper() in ignored_brands else brand_raw
+
+
+def normalize_numeric_id(value):
+    """
+    Parsea de vuelta a texto los valores numéricos alterados por notación científica.
+    Por qué: Garantiza que los identificadores de artículo (SKU/Ref) permanezcan exactos para el guardado.
+    """
+    value_str = str(value).strip().replace(',', '.')
     
+    if 'E+' in value_str.upper():
+        try:
+            return str(int(float(value_str)))
+        except ValueError as e:
+            # Por qué: Asegura que el flujo de datos no se interrumpa si el valor no es parseable matemáticamente.
+            print(f"[*] Fallo interpretando notación científica: {e}")
+            return value_str
+    return value_str
+
+
+# ==============================================================================
+# NIVEL 4: UTILIDADES DEL SISTEMA Y SOPORTE (Criticidad Baja)
+# Operaciones estándar, I/O simple, configuraciones y utilidades de sistema.
+# ==============================================================================
+
+def configure_browser():
+    """
+    Configura los parámetros subyacentes del motor Chromium.
+    Por qué: Desactiva componentes innecesarios (GPU, sandbox) para maximizar el rendimiento y estabilidad.
+    """
     options = uc.ChromeOptions()
-    options.binary_location = ruta_gx
+    
+    # Por qué: Se utiliza variable de entorno para no exponer rutas físicas ni usuarios locales.
+    binary_path = os.getenv('BROWSER_BINARY_PATH')
+    if binary_path:
+        options.binary_location = binary_path
+        
     options.add_argument('--disable-gpu')
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-notifications')
     return options
-  
 
-def determinar_columna_marca(cabeceras):
+
+def initialize_browser(options):
     """
-    Detección inteligente de la columna de marca, buscando coincidencias comunes 
-    y priorizando nombres claros para mejorar la precisión de la búsqueda.
-
-    Args:
-        cabeceras (list): Lista con los nombres de las columnas del CSV.
-
-    Returns:
-        str | None: El nombre de la columna de marca encontrada o None.
+    Instancia el navegador vinculando la configuración establecida.
+    Por qué: Fija tiempos de espera globales para evitar bloqueos infinitos en cargas de red lentas.
     """
-    col_marca = None
-    if 'NOMBRE MARCA' in cabeceras:
-        col_marca = 'NOMBRE MARCA'
-    else:
-        for c in cabeceras:
-            if 'MARCA' in c or 'FABRICANTE' in c:
-                col_marca = c
-                if 'NOMBRE' in c: break
-    return col_marca
-        
-
-def especificar_version(opciones):
-    """
-    Inicializa el navegador especificando la versión principal de Chrome.
-
-    Args:
-        opciones (uc.ChromeOptions): Opciones configuradas previamente.
-
-    Returns:
-        uc.Chrome: Instancia del navegador controlable.
-    """
-    driver = uc.Chrome(options=opciones, version_main=143)
+    driver = uc.Chrome(options=options)
     driver.set_page_load_timeout(30)
     return driver
-        
 
-def recorrer_csv(output_dir, driver, reader, col_nombre, col_codigo, col_marca):
+
+def close_browser_safely(driver):
     """
-    Itera sobre cada fila del CSV extrayendo los datos y lanzando la descarga.
-
-    Args:
-        output_dir (str): Directorio donde se guardarán las imágenes.
-        driver (uc.Chrome): Instancia del navegador.
-        reader (csv.DictReader): Lector del archivo CSV.
-        col_nombre (str): Nombre de la columna del artículo.
-        col_codigo (str): Nombre de la columna del código.
-        col_marca (str | None): Nombre de la columna de la marca.
+    Ejecuta la terminación controlada del driver mitigando excepciones del OS.
+    Por qué: Previene el 'OSError: [WinError 6]' generado por el destructor asíncrono de undetected_chromedriver.
     """
-    for fila in reader:
-        codigo = fila.get(col_codigo, '').strip()
-        nombre_raw = fila.get(col_nombre, '').strip()
-        marca_raw = fila.get(col_marca, '').strip() if col_marca else ''
-        marca_raw = filtrar_marcas(marca_raw) 
-                
-        # Filtro de filas sin código o nombre, que no tienen sentido para la búsqueda
-        if not codigo or not nombre_raw: 
-            continue
-                
-        # Verificamos si la imagen ya existe para evitar búsquedas innecesarias
-        ruta_img = os.path.join(output_dir, f"{codigo}.jpg")
-        if os.path.exists(ruta_img): 
-            continue 
-                
-        # Limpiamos el nombre y construimos la búsqueda con contexto comercial
-        nombre_con_contexto = limpiar_nombre_erp(nombre_raw)
-        busqueda = f"{nombre_con_contexto} {marca_raw}".strip()
-                
-        print(f"[*] Buscando [{codigo}]: {busqueda}...", end=" ", flush=True)
-                
-        decargar_imagen_bing(driver, ruta_img, busqueda)
+    if driver is not None:
+        try:
+            if hasattr(driver.__class__, '__del__'):
+                setattr(driver.__class__, '__del__', lambda self: None)
+            driver.quit()
+        except OSError as e:
+            # Por qué: Se absorbe el error exclusivamente si el manejador ya fue destruido por el OS.
+            print(f"[*] Limpieza completada (Descriptor cerrado): {e}")
+        except Exception as e:
+            # Por qué: Aplicamos manejo centralizado registrando cualquier anomalía residual.
+            print(f"[!] Advertencia al cerrar el navegador: {e}")
+    print("--- NAVEGADOR CERRADO AUTOMÁTICAMENTE ---")
 
 
-def filtrar_marcas(marca_raw):
+def prepare_directory(path):
     """
-    Filtro de Marcas Genéricas que no aportan valor a la búsqueda y pueden 
-    generar ruido o bloqueos en Selenium por parte de la web.
-
-    Args:
-        marca_raw (str): Nombre de la marca sin procesar.
-
-    Returns:
-        str: Nombre de la marca válido o cadena vacía si es genérica.
+    Verifica y crea el directorio de salida de imágenes.
+    Por qué: Evita excepciones a nivel de sistema operativo al intentar guardar los binarios.
     """
-    marcas_ignoradas = ['MARCAS VARIAS', 'MARCA VARIA', 'GENERICO', 'SIN MARCA', 'AFT']
-    if marca_raw.upper() in marcas_ignoradas:
-        marca_raw = ''
-    return marca_raw
+    if not os.path.exists(path): 
+        os.makedirs(path)
 
 
-def limpiar_nombre_erp(texto):
+def prepare_log(log_path):
     """
-    Limpia el nombre, repara el rombo corrupto de Excel e inyecta contexto.
-
-    Args:
-        texto (str): Nombre en crudo extraído del ERP.
-
-    Returns:
-        str: Texto estructurado y optimizado para la búsqueda.
+    Inicializa el archivo de registro para las descargas fallidas o de baja resolución.
+    Por qué: Separa visualmente las ejecuciones en el log temporal para facilitar la depuración.
     """
-    texto = str(texto).upper().split('..')[0]
-    
-    # 1. Limpieza de acentos raros del ERP
-    texto = remplazo(texto)
-        
-    # 2. CONTEXTO COMERCIAL EXTREMO (Anti-PDFs y Anti-Coches)
-    contexto = contexto_comercial(texto)
-        
-    # 3. Limpieza de símbolos y palabras basura
-    return limpieza(texto, contexto)
+    with open(log_path, 'a', encoding='utf-8') as f:
+        f.write(f"\n--- NUEVA EJECUCIÓN: {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
 
 
-def remplazo(texto):
+def log_fallback_download(item_id, log_file):
     """
-    Reemplaza caracteres extraños y acentos comunes originados por mala codificación.
-
-    Args:
-        texto (str): Texto a limpiar.
-
-    Returns:
-        str: Texto con los caracteres reemplazados.
-    """
-    reemplazos = {'Ì': 'I', 'Ï': 'I', 'Ö': 'O', 'Ä': 'A', '—': '-', 'Í': 'I', 'Ã': 'A', '±': '-', 'Â': 'A', 'Ç': 'C', 'Ñ': 'Ñ', 'Ó': 'O', 'Ú': 'U', 'É': 'E', 'Ü': 'U', 'À': 'A'}
-    for k, v in reemplazos.items():
-        texto = texto.replace(k, v)
-    return texto
-
-
-def contexto_comercial(texto):
-    """
-    Asigna un bloque de texto contextual para enfocar mejor la búsqueda 
-    y evitar falsos positivos en los motores de búsqueda de imágenes.
-
-    Args:
-        texto (str): Nombre del artículo.
-
-    Returns:
-        str: Palabras clave de contexto comercial.
-    """
-    contexto = "comprar" 
-    
-    if "SIERRA" in texto or "MOTOSIERRA" in texto:
-        contexto = "herramienta motosierra comprar"
-    elif "MOTOAZADA" in texto or "MOTOCULTOR" in texto:
-        contexto = "maquinaria agricola comprar"
-    elif "BOMBA" in texto:
-        contexto = "agua fontaneria comprar"
-    elif "LITIO" in texto or "GRASA" in texto:
-        contexto = "bote grasa lubricante comprar"
-    elif "ADBLUE" in texto:
-        contexto = "garrafa adblue comprar"
-    elif "REFRIG" in texto or "ANTICONGELANTE" in texto or "B2000" in texto:
-        contexto = "garrafa anticongelante refrigerante motor comprar"
-    return contexto
-
-
-def limpieza(texto, contexto):
-    """
-    Filtra palabras que no aportan valor y adjunta el contexto comercial al final.
-
-    Args:
-        texto (str): Texto base a filtrar.
-        contexto (str): Texto de contexto comercial a añadir.
-
-    Returns:
-        str: Cadena final lista para ser buscada en Bing.
-    """
-    texto = re.sub(r'[%.\(\)]', ' ', texto)
-    basura = {'LTS', 'GR', 'REFRIG', 'INCLUIDA', 'SI', 'APORTACIO', 'APORTACION', 'CON', 'X', 'KGS', 'CC', 'ML'}
-    palabras = [p for p in texto.split() if p not in basura and len(p) > 1]
-    
-    resultado = " ".join(palabras).strip()
-    return f"{resultado} {contexto}".strip()
-
-
-def decargar_imagen_bing(driver, ruta_img, busqueda):
-    """
-    Intenta cargar la página de resultados de Bing Images y descargar 
-    la primera imagen válida encontrada.
-
-    Args:
-        driver (uc.Chrome): Instancia del navegador.
-        ruta_img (str): Ruta local donde se almacenará el archivo.
-        busqueda (str): Cadena de texto enviada al buscador.
+    Anota el identificador de producto afectado en un archivo de texto.
+    Por qué: Permite generar un reporte para control de calidad manual posterior.
     """
     try:
-        build_url(driver, busqueda) 
-        imagenes = driver.find_elements(By.CSS_SELECTOR, "img.mimg")
-        src_valido = buscar_http(imagenes)
-        comprobar_src(ruta_img, src_valido)
-
-    except Exception:
-        print(f"Error cargando la página.")
-                
-    time.sleep(1)
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(f"{item_id}\n")
+    except Exception as e:
+        # Por qué: Aísla el error de I/O de disco para no romper la ejecución en curso.
+        print(f"[!] Fallo escribiendo log: {e}", end=" ")
 
 
-def build_url(driver, busqueda):
+def resolve_file_path(filename):
     """
-    Construye la URL de búsqueda en Bing Images con el contexto comercial incluido y navega.
-
-    Args:
-        driver (uc.Chrome): Instancia del navegador.
-        busqueda (str): Cadena de texto a buscar.
+    Resuelve la ruta absoluta del archivo buscando en el directorio actual y su padre.
+    Por qué: Previene errores [Errno 2] al ejecutar el script desde subdirectorios del proyecto.
     """
-    url_busqueda = f"https://www.bing.com/images/search?q={busqueda}+producto"
-    driver.get(url_busqueda)
-    time.sleep(2)
+    current_path = os.path.abspath(filename)
+    if os.path.exists(current_path):
+        return current_path
         
+    parent_path = os.path.abspath(os.path.join(os.pardir, filename))
+    if os.path.exists(parent_path):
+        return parent_path
+        
+    raise FileNotFoundError(f"Archivo '{filename}' no encontrado en el directorio actual ni superior.")
 
-def buscar_http(imagenes):
+
+def sanitize_filename(text):
     """
-    Busca la primera imagen que tenga un src válido (http) para evitar bloqueos.
-
-    Args:
-        imagenes (list): Lista de WebElements que contienen las etiquetas img.
-
-    Returns:
-        str | None: Enlace HTTP válido o None si no se encuentra.
+    Elimina caracteres no válidos para el sistema de archivos del OS.
+    Por qué: Evita excepciones OSError al intentar escribir el archivo .jpg en el disco.
     """
-    src_valido = None
-    for img_el in imagenes:
-        enlace = img_el.get_attribute('src') or img_el.get_attribute('data-src')
-        if enlace and enlace.startswith('http'):
-            src_valido = enlace
-            break
-    return src_valido
+    return re.sub(r'[\\/*?:"<>|]', '_', str(text))
 
 
-def comprobar_src(ruta_img, src_valido):
+def process_and_save_image(img_path, raw_bytes, label):
     """
-    Comprueba si se encontró un src válido antes de intentar descargar la imagen.
-
-    Args:
-        ruta_img (str): Ruta destino del archivo.
-        src_valido (str | None): Enlace detectado de la imagen.
+    Convierte el buffer a formato RGB estandarizado comprobando su integridad.
+    Por qué: Maximiza la fidelidad visual, recorta tamaños excesivos y garantiza un binario válido.
     """
-    if src_valido:
-        respuesta = requests.get(src_valido, timeout=5)
-        procesar_imagen(ruta_img, respuesta)
-    else:
-        print("Sin resultados.")
-
-
-def procesar_imagen(ruta_img, respuesta):
-    """
-    Procesa la imagen con PIL para asegurar calidad y formato correcto, 
-    además de manejar posibles bloqueos de descarga.
-
-    Args:
-        ruta_img (str): Ruta donde guardar la imagen.
-        respuesta (requests.Response): Objeto de respuesta HTTP.
-    """
-    if respuesta.status_code == 200:
-        img = Image.open(BytesIO(respuesta.content)).convert("RGB")
-        img.thumbnail((800, 800), Image.Resampling.LANCZOS)
-        img.save(ruta_img, "JPEG", optimize=True, quality=85)
-        print("OK!")
-    else:
-        print("Descarga bloqueada por la web.")
+    try:
+        img = Image.open(BytesIO(raw_bytes)).convert("RGB")
+        img.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
+        img.save(img_path, "JPEG", optimize=True, quality=95)
+        print(f"¡OK! [{label}]")
+        return True
+    except Exception as e:
+        # Por qué: Intercepta bytes corruptos o respuestas HTML disfrazadas de imagen.
+        print(f"Error procesando binario: {type(e).__name__}", end=" ")
+        return False
 
 
 if __name__ == "__main__":
-    ejecutor_imagenes_opera()
+    main()
