@@ -11,7 +11,7 @@ El identificador único de cada producto es la columna 'Id'.
 Los resultados se persisten de forma incremental para permitir reanudación.
 
 :author: BenjaminDTS
-:version: 2.1.0
+:version: 1.2.0
 """
 
 import os
