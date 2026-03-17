@@ -14,17 +14,21 @@ Este script está diseñado para procesar inventarios enormes (miles de filas) d
 
 Este script requiere librerías externas para la manipulación de datos y la conexión con la API.
 
-Instala las dependencias ejecutando:
+Instala todas las dependencias con el archivo incluido:
 ```bash
-pip install pandas groq tqdm
-
+pip install -r requeriments.txt
 ```
 
-*(Opcional)* Para compilar la documentación técnica incluida en el código fuente (`pydoc`):
+O manualmente solo las de ejecución:
+
+```bash
+pip install pandas groq tqdm loguru pydantic pydantic-settings
+```
+
+*(Opcional)* Solo documentación MkDocs:
 
 ```bash
 pip install mkdocs mkdocs-material mkdocstrings[python]
-
 ```
 
 ## 📄 Especificaciones del Archivo de Entrada
@@ -53,7 +57,7 @@ La variable global `MODELOS_DISPONIBLES` contiene la jerarquía de rotación. El
 2. Ejecuta el script desde tu terminal:
 
 ```bash
-python procesador_ia.py
+python descripcion.py
 
 ```
 
@@ -83,18 +87,22 @@ This script is designed to process huge inventories (thousands of rows) autonomo
 
 This script requires external libraries for data manipulation and API connection.
 
-Install the dependencies by running:
+Install all dependencies using the included file:
 
 ```bash
-pip install pandas groq tqdm
-
+pip install -r requeriments.txt
 ```
 
-*(Optional)* To compile the technical documentation included in the source code (`pydoc`):
+Or manually, only the runtime ones:
+
+```bash
+pip install pandas groq tqdm loguru pydantic pydantic-settings
+```
+
+*(Optional)* Only for MkDocs documentation:
 
 ```bash
 pip install mkdocs mkdocs-material mkdocstrings[python]
-
 ```
 
 ## 📄 Input File Specifications
@@ -123,7 +131,7 @@ The global variable `MODELOS_DISPONIBLES` contains the rotation hierarchy. The s
 2. Run the script from your terminal:
 
 ```bash
-python procesador_ia.py
+python descripcion.py
 
 ```
 

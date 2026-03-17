@@ -1,0 +1,38 @@
+# Entorno virtual
+.venv/
+venv/
+env/
+
+# Variables de entorno y secretos
+.env
+.env.local
+*.env
+
+# Archivos de datos (inventarios y salidas generadas)
+*.csv
+*.xlsx
+*.xls
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Distribución / empaquetado
+dist/
+build/
+*.egg-info/
+
+# Logs
+*.log
+logs/
+
+# MkDocs
+site/
+
+# IDE
+.vscode/
+.idea/
+*.swp
