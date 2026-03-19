@@ -2,10 +2,10 @@
 Módulo avanzado de importación masiva de Contactos (Clientes y Proveedores) para Odoo.
 
 Este script gestiona la creación de registros en el modelo 'res.partner', validando duplicados
-mediante NIF/CIF o coincidencia exacta de nombre. Soluciona errores de codificación regional 
-(uso de latin-1) y asegura la compatibilidad de campos técnicos (nb_days y percent) para 
-versiones modernas de Odoo. Incorpora archivado automático de bajas y generación dinámica e 
-inteligente de Formas de Pago ('account.payment.term') analizando el texto mediante 
+mediante NIF/CIF o coincidencia exacta de nombre. Soluciona errores de codificación regional
+(uso de latin-1) y asegura la compatibilidad de campos técnicos (nb_days y percent) para
+versiones modernas de Odoo. Incorpora archivado automático de bajas y generación dinámica e
+inteligente de Formas de Pago ('account.payment.term') analizando el texto mediante
 expresiones regulares, incluyendo filtros de seguridad contra valores numéricos anómalos.
 
 @author BenjaminDTS
@@ -14,39 +14,65 @@ expresiones regulares, incluyendo filtros de seguridad contra valores numéricos
 import csv
 import xmlrpc.client
 import re
+import os
+import sys
+from dotenv import load_dotenv
+from loguru import logger
+
+load_dotenv()
+
+# Logger estructurado — se elimina el handler por defecto para configurarlo manualmente
+logger.remove()
+os.makedirs("logs", exist_ok=True)
+logger.add(
+    sys.stderr,
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level:<8} | {message}",
+    level="DEBUG",
+    colorize=True,
+)
+logger.add(
+    "logs/clientes_proveedores_{time:YYYY-MM-DD}.log",
+    format="{time} | {level} | {message}",
+    level="INFO",
+    rotation="10 MB",
+    serialize=True,
+)
 
 # ==========================================
-# CONFIGURACIÓN DE ODOO
+# CONFIGURACIÓN DESDE VARIABLES DE ENTORNO
 # ==========================================
-URL = 'url_de_tu_odoo'  # Reemplaza con la URL de tu instancia de Odoo
-DB = 'nombre_de_tu_base_de_datos'  # Reemplaza con el nombre de tu base de datos
-USERNAME = 'tu_usuario'  # Reemplaza con tu usuario de Odoo
-PASSWORD = 'tu_contraseña'  # Reemplaza con tu contraseña de Odoo
-
-# Nombres de archivos (ajusta si tienen mayúsculas o minúsculas distintas en tu carpeta)
-ARCHIVO_CLIENTES = 'Clientes.csv'
-ARCHIVO_PROVEEDORES = 'PROVEEDORES.csv'
-
-# Codificación 'latin-1' para procesar tildes y la Ñ correctamente
-ENCODING_CSV = 'latin-1' 
+URL      = os.environ.get("ODOO_URL", "")
+DB       = os.environ.get("ODOO_DB", "")
+USERNAME = os.environ.get("ODOO_USERNAME", "")
+PASSWORD = os.environ.get("ODOO_PASSWORD", "")
+ARCHIVO_CLIENTES    = os.environ.get("ARCHIVO_CLIENTES", "Clientes.csv")
+ARCHIVO_PROVEEDORES = os.environ.get("ARCHIVO_PROVEEDORES", "PROVEEDORES.csv")
+ENCODING_CSV        = os.environ.get("ENCODING_CSV", "latin-1")
 
 # Memoria caché para optimizar las peticiones al servidor
-CACHE_PAGOS = {}
+CACHE_PAGOS: dict[str, int | bool] = {}
 
 
 # ==========================================
 # 1. ORQUESTACIÓN PRINCIPAL
 # ==========================================
 
-def ejecutar_migracion_contactos():
+def ejecutar_migracion_contactos() -> None:
     """
     Punto de entrada principal para la migración.
-    Establece la conexión con Odoo vía XML-RPC y lanza los procesos de 
-    importación secuencial para clientes y luego para proveedores, 
+    Establece la conexión con Odoo vía XML-RPC y lanza los procesos de
+    importación secuencial para clientes y luego para proveedores,
     ajustando los delimitadores según el formato de cada archivo.
+    Valida que las variables de entorno requeridas estén presentes antes
+    de intentar ninguna conexión.
     """
+    # Validación temprana de variables de entorno obligatorias
+    if not all([URL, DB, USERNAME, PASSWORD]):
+        logger.critical("Variables de entorno de Odoo incompletas. Revisa el archivo .env.")
+        sys.exit(1)
+
     uid = conectar_odoo()
-    if not uid: 
+    if not uid:
         return
 
     models = xmlrpc.client.ServerProxy(f'{URL}/xmlrpc/2/object')
@@ -54,20 +80,20 @@ def ejecutar_migracion_contactos():
     # IMPORTANTE: Clientes.csv suele usar ';' y Proveedores suele usar ','
     procesar_csv_contactos(uid, models, ARCHIVO_CLIENTES, es_proveedor=False, delimitador=';')
     procesar_csv_contactos(uid, models, ARCHIVO_PROVEEDORES, es_proveedor=True, delimitador=',')
-    
-    print("\n[OK] Migración de contactos finalizada con éxito.")
+
+    logger.info("Migración de contactos finalizada con éxito.")
 
 
 # ==========================================
 # 2. LÓGICA DE PROCESADO
 # ==========================================
 
-def procesar_csv_contactos(uid, models, ruta_csv, es_proveedor, delimitador=';'):
+def procesar_csv_contactos(uid: int, models, ruta_csv: str, es_proveedor: bool, delimitador: str = ";") -> None:
     """
     Lee el archivo CSV e inserta los contactos en Odoo.
     Utiliza search_read para comprobar los roles existentes y solo actualiza
     la base de datos si el contacto necesita ser convertido al nuevo rol.
-    
+
     :param uid: ID del usuario autenticado.
     :param models: Objeto de conexión a modelos.
     :param ruta_csv: Nombre del archivo CSV.
@@ -75,29 +101,30 @@ def procesar_csv_contactos(uid, models, ruta_csv, es_proveedor, delimitador=';')
     :param delimitador: Delimitador del CSV.
     """
     tipo = "PROVEEDOR" if es_proveedor else "CLIENTE"
-    print(f"\n--- INICIANDO IMPORTACIÓN DE {tipo}S DESDE {ruta_csv} ---")
+    logger.info("Iniciando importación.", tipo=tipo, archivo=ruta_csv)
 
     try:
         with open(ruta_csv, mode='r', encoding=ENCODING_CSV) as f:
             reader = csv.DictReader(f, delimiter=delimitador)
             reader.fieldnames = [c.strip().upper() for c in reader.fieldnames if c]
-            
+
             for fila in reader:
                 nombre = fila.get('NOMBRE', '').strip()
-                if not nombre: continue
+                if not nombre:
+                    continue
 
                 try:
                     nif = fila.get('C.I.F.', fila.get('CIF', '')).strip()
-                    
+
                     domain = [('name', '=', nombre)]
                     if nif:
                         domain = ['|', ('vat', '=', nif), ('name', '=', nombre)]
-                    
+
                     # CAMBIO CLAVE: search_read nos permite ver cómo está configurado en Odoo
-                    existente = models.execute_kw(DB, uid, PASSWORD, 'res.partner', 'search_read', 
-                                                 [domain], 
-                                                 {'fields': ['id', 'customer_rank', 'supplier_rank'], 'limit': 1})
-                    
+                    existente = models.execute_kw(DB, uid, PASSWORD, 'res.partner', 'search_read',
+                                                  [domain],
+                                                  {'fields': ['id', 'customer_rank', 'supplier_rank'], 'limit': 1})
+
                     id_pago = gestionar_pago(uid, models, fila)
 
                     if existente:
@@ -106,47 +133,49 @@ def procesar_csv_contactos(uid, models, ruta_csv, es_proveedor, delimitador=';')
                         s_rank = existente[0].get('supplier_rank', 0)
 
                         datos_actualizar = {}
-                        
+
                         # Solo actualizamos si es proveedor y su rango de proveedor es 0
                         if es_proveedor and s_rank == 0:
                             datos_actualizar['supplier_rank'] = 1
-                            if id_pago: datos_actualizar['property_supplier_payment_term_id'] = id_pago
-                                
+                            if id_pago:
+                                datos_actualizar['property_supplier_payment_term_id'] = id_pago
+
                         # Solo actualizamos si es cliente y su rango de cliente es 0
                         elif not es_proveedor and c_rank == 0:
                             datos_actualizar['customer_rank'] = 1
-                            if id_pago: datos_actualizar['property_payment_term_id'] = id_pago
+                            if id_pago:
+                                datos_actualizar['property_payment_term_id'] = id_pago
 
                         # Ejecutamos la actualización solo si hay cambios reales que hacer
                         if datos_actualizar:
                             models.execute_kw(DB, uid, PASSWORD, 'res.partner', 'write', [[partner_id], datos_actualizar])
-                            print(f"  [UPDT] {nombre} (ID: {partner_id}) convertido también en {tipo}.")
+                            logger.info("Contacto actualizado.", nombre=nombre, id=partner_id, rol=tipo)
                         else:
                             # Si ya estaba bien, lo ignoramos en silencio (para no ensuciar la consola)
-                            pass 
-                        
+                            pass
+
                         continue
 
                     # Si no existía de ninguna forma, lo creamos
                     crear(uid, models, es_proveedor, tipo, fila, nombre, id_pago)
 
                 except Exception as error_contacto:
-                    print(f"[-] Error en el contacto '{nombre}': {error_contacto}")
-                    continue 
+                    logger.warning("Error procesando contacto.", nombre=nombre, error=str(error_contacto))
+                    continue
 
     except FileNotFoundError:
-        print(f"[!] Archivo no encontrado: {ruta_csv}")
+        logger.error("Archivo no encontrado.", ruta=ruta_csv)
     except Exception as e:
-        print(f"[!] Error crítico en el archivo {ruta_csv}: {e}")
+        logger.critical("Error crítico en archivo.", archivo=ruta_csv, error=str(e))
 
 
 # ==========================================
 # 3. FUNCIONES DE NEGOCIO Y API (CREACIÓN)
 # ==========================================
 
-def gestionar_pago(uid, models, fila):
+def gestionar_pago(uid: int, models, fila: dict) -> int | bool:
     """
-    Extrae la forma de pago de la fila del Excel y gestiona su obtención 
+    Extrae la forma de pago de la fila del Excel y gestiona su obtención
     o creación dinámica en la contabilidad de Odoo.
 
     :param uid: int. ID de usuario autenticado.
@@ -157,7 +186,8 @@ def gestionar_pago(uid, models, fila):
     nombre_pago = fila.get('FORMA DE PAGO', '').strip()
     return obtener_o_crear_forma_pago(uid, models, nombre_pago)
 
-def crear(uid, models, es_proveedor, tipo, fila, nombre, id_pago):
+
+def crear(uid: int, models, es_proveedor: bool, tipo: str, fila: dict, nombre: str, id_pago: int | bool) -> None:
     """
     Prepara el diccionario final de datos y lanza la llamada XML-RPC para
     crear el registro en el modelo 'res.partner'.
@@ -165,18 +195,19 @@ def crear(uid, models, es_proveedor, tipo, fila, nombre, id_pago):
     :param uid: int. ID de usuario autenticado.
     :param models: ServerProxy. Objeto de conexión.
     :param es_proveedor: bool. Determina la clasificación comercial.
-    :param tipo: str. Etiqueta para la consola (CLIENTE/PROVEEDOR).
+    :param tipo: str. Etiqueta para el log (CLIENTE/PROVEEDOR).
     :param fila: dict. Datos extraídos del CSV.
     :param nombre: str. Nombre limpio del contacto.
     :param id_pago: int o bool. ID relacional del plazo de pago.
     """
     datos = preparar_datos_contacto(fila, es_proveedor, id_pago)
     nuevo_id = models.execute_kw(DB, uid, PASSWORD, 'res.partner', 'create', [datos])
-    print(f"[+] {tipo} Creado: {nombre[:30]}... (ID Odoo: {nuevo_id})")
+    logger.info("Contacto creado.", tipo=tipo, nombre=nombre[:30], id=nuevo_id)
 
-def obtener_o_crear_forma_pago(uid, models, nombre_pago):
+
+def obtener_o_crear_forma_pago(uid: int, models, nombre_pago: str) -> int | bool:
     """
-    Busca una forma de pago existente por nombre, o la crea automáticamente 
+    Busca una forma de pago existente por nombre, o la crea automáticamente
     extrayendo el número de días del texto mediante expresiones regulares.
     Incluye protección contra sobrecargas (días > 365) y adapta los campos
     técnicos (nb_days, percent) a los requisitos de Odoo moderno.
@@ -186,10 +217,10 @@ def obtener_o_crear_forma_pago(uid, models, nombre_pago):
     :param nombre_pago: str. Texto de la forma de pago.
     :return: int o bool. ID relacional del registro contable creado o encontrado.
     """
-    if not nombre_pago or nombre_pago.lower() in ['nan', '']: 
+    if not nombre_pago or nombre_pago.lower() in ['nan', '']:
         return False
-        
-    if nombre_pago in CACHE_PAGOS: 
+
+    if nombre_pago in CACHE_PAGOS:
         return CACHE_PAGOS[nombre_pago]
 
     # Buscar si ya existe
@@ -205,7 +236,7 @@ def obtener_o_crear_forma_pago(uid, models, nombre_pago):
     try:
         # Crear cabecera y línea de pago
         nuevo_term_id = models.execute_kw(DB, uid, PASSWORD, 'account.payment.term', 'create', [{'name': nombre_pago}])
-        
+
         # Inyectamos la regla matemática: 'nb_days' y 'percent'
         models.execute_kw(DB, uid, PASSWORD, 'account.payment.term.line', 'create', [{
             'payment_id': nuevo_term_id,
@@ -213,12 +244,12 @@ def obtener_o_crear_forma_pago(uid, models, nombre_pago):
             'nb_days': dias,
             'value_amount': 100.0
         }])
-        
-        print(f"  [*] Creada Forma de Pago en contabilidad: '{nombre_pago}' ({dias} días)")
+
+        logger.info("Forma de pago creada.", nombre=nombre_pago, dias=dias)
         CACHE_PAGOS[nombre_pago] = nuevo_term_id
         return nuevo_term_id
     except Exception as e:
-        print(f"  [!] Error automatizando la forma de pago '{nombre_pago}': {e}")
+        logger.error("Error creando forma de pago.", nombre=nombre_pago, error=str(e))
         return False
 
 
@@ -226,7 +257,7 @@ def obtener_o_crear_forma_pago(uid, models, nombre_pago):
 # 4. FUNCIONES AUXILIARES Y MAPEADO
 # ==========================================
 
-def preparar_datos_contacto(fila, es_proveedor, id_pago):
+def preparar_datos_contacto(fila: dict, es_proveedor: bool, id_pago: int | bool) -> dict:
     """
     Mapea las columnas del CSV al diccionario de campos nativos de Odoo.
     Gestiona el archivado mediante la Fecha de Baja y el registro de históricos
@@ -253,18 +284,19 @@ def preparar_datos_contacto(fila, es_proveedor, id_pago):
         'supplier_rank': 1 if es_proveedor else 0,
         'is_company': True,
         'ref': ref,
-        'active': False if f_baja else True, # Archiva si hay fecha de baja
+        'active': False if f_baja else True,  # Archiva si hay fecha de baja
         'comment': f"Importado por script de automatización. Ref original: {ref}\nFecha Alta Original: {f_alta}"
     }
-    
+
     # Enlace de plazos de pago (campos técnicos de Odoo)
     if id_pago:
         campo = 'property_supplier_payment_term_id' if es_proveedor else 'property_payment_term_id'
         datos[campo] = id_pago
-            
+
     return datos
 
-def conectar_odoo():
+
+def conectar_odoo() -> int | bool:
     """
     Gestiona el proceso de autenticación XML-RPC contra la base de datos de Odoo.
 
@@ -274,12 +306,12 @@ def conectar_odoo():
         common = xmlrpc.client.ServerProxy(f'{URL}/xmlrpc/2/common')
         uid = common.authenticate(DB, USERNAME, PASSWORD, {})
         if uid:
-            print(f"[Conexión OK] Autenticado de forma segura con UID: {uid}")
+            logger.info("Autenticado en Odoo.", uid=uid)
             return uid
-        print("[!] Error: Credenciales incorrectas.")
+        logger.error("Credenciales incorrectas o acceso denegado.")
         return False
     except Exception as e:
-        print(f"[!] Error de conexión de red: {e}")
+        logger.error("Error de conexión de red.", error=str(e))
         return False
 
 

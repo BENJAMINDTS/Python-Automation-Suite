@@ -1,4 +1,5 @@
 # Importador Avanzado de Contactos para Odoo
+
 **Autor:** BenjaminDTS
 
 Módulo en Python diseñado para la migración masiva, inteligente y segura de datos desde archivos Excel/CSV (Clientes y Proveedores) hacia el ERP Odoo mediante su API XML-RPC.
@@ -7,58 +8,101 @@ Módulo en Python diseñado para la migración masiva, inteligente y segura de d
 
 * **Fusión Inteligente de Roles:** No duplica registros. Si un Contacto existe como Cliente y se vuelve a procesar como Proveedor, el script fusiona ambos perfiles (`customer_rank` y `supplier_rank`) en la misma ficha.
 * **Auto-Gestión de Plazos de Pago:** Lee el texto del Excel (ej. "GIRO 60") y crea/asigna automáticamente la regla contable en Odoo (`account.payment.term`). Incluye un filtro de seguridad que ignora números anómalos o IBANs erróneos.
-* **Tolerancia a Fallos (Fallback):** Si Odoo rechaza un contacto porque el C.I.F. es inválido según la normativa fiscal, el script rescata el C.I.F., lo guarda en las Notas Internas y crea la ficha de todas formas para no perder el dato.
 * **Archivado Automático:** Detecta si la celda `FECHA DE BAJA` contiene datos y archiva automáticamente al contacto (`active = False`).
 * **Codificación Regional:** Preparado con codificación `latin-1` para procesar sin errores caracteres españoles (ñ, acentos) procedentes de exportaciones antiguas de Excel.
+* **Logging Estructurado:** Usa `loguru` con doble salida — consola coloreada y archivo JSON rotativo en `logs/`.
 
-## ⚙️ Requisitos Previos
+## 🛠️ Requisitos e Instalación
 
-Asegúrate de tener Python instalado en tu sistema. El script utiliza librerías nativas, por lo que no es necesario instalar dependencias externas (`pip install`).
+```bash
+pip install -r requirements.txt
+```
+
+Dependencias:
+
 * `xmlrpc.client` (Nativa)
-* `csv` (Nativa)
-* `re` (Nativa)
+* `csv`, `re` (Nativas)
+* `loguru>=0.7.0`
+* `python-dotenv>=1.0.0`
 
 ## 📂 Estructura de Archivos
 
-Para que el script funcione correctamente, los archivos deben estar en el mismo directorio:
-
 ```text
-/directorio_del_proyecto
- │-- importador_contactos.py
- │-- Clientes.csv (Delimitado por ';')
- │-- PROVEEDORES.csv (Delimitado por ',' o ';')
- │-- README.md
-
+/upload_customers_suppliers_odoo
+ ├── proveedor_cliente.py
+ ├── .env.example
+ ├── .env              ← crear desde .env.example (no versionar)
+ ├── requirements.txt
+ ├── Clientes.csv      (delimitado por ';')
+ ├── PROVEEDORES.csv   (delimitado por ',')
+ └── README.md
 ```
 
-## 🔧 Configuración
+## ⚙️ Configuración mediante `.env`
 
-Antes de ejecutar, abre `importador_contactos.py` y edita las siguientes variables en la cabecera del archivo con los datos de tu entorno:
+Este módulo usa **variables de entorno** para gestionar las credenciales de Odoo. Nunca edites las credenciales directamente en el código fuente.
 
-```python
-URL = '[https://tudominio.com](https://tudominio.com)'
-DB = 'nombre_de_la_base_de_datos'
-USERNAME = 'tu_correo@ejemplo.com'
-PASSWORD = 'tu_contraseña_o_api_key'
+### Pasos
 
-```
+1. Copia el archivo de plantilla:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Abre `.env` y rellena los valores:
+
+   ```env
+   ODOO_URL=https://tu-dominio.odoo.com
+   ODOO_DB=nombre_de_tu_base_de_datos
+   ODOO_USERNAME=tu_usuario@empresa.com
+   ODOO_PASSWORD=tu_contraseña_segura
+
+   # Opcionales
+   ARCHIVO_CLIENTES=Clientes.csv
+   ARCHIVO_PROVEEDORES=PROVEEDORES.csv
+   ENCODING_CSV=latin-1
+   ```
+
+> **Nunca subas el archivo `.env` al control de versiones.**
+
+### Variables disponibles
+
+| Variable | Requerida | Por defecto | Descripción |
+| --- | --- | --- | --- |
+| `ODOO_URL` | SÍ | — | URL de tu instancia de Odoo |
+| `ODOO_DB` | SÍ | — | Nombre de la base de datos |
+| `ODOO_USERNAME` | SÍ | — | Usuario de Odoo |
+| `ODOO_PASSWORD` | SÍ | — | Contraseña del usuario |
+| `ARCHIVO_CLIENTES` | NO | `Clientes.csv` | CSV de clientes (delimitador `;`) |
+| `ARCHIVO_PROVEEDORES` | NO | `PROVEEDORES.csv` | CSV de proveedores (delimitador `,`) |
+| `ENCODING_CSV` | NO | `latin-1` | Codificación de los archivos CSV |
 
 ## 💻 Uso
 
-Abre tu terminal o símbolo del sistema, navega hasta la carpeta del proyecto y ejecuta:
-
 ```bash
-python importador_contactos.py
+python proveedor_cliente.py
 ```
 
-El script mostrará un registro en tiempo real por consola de cada acción: creaciones `[+]`, actualizaciones de rol `[UPDT]`, alertas de seguridad `[!]` y errores `[-]`.
+El script registra en tiempo real cada acción mediante `loguru`. Los logs estructurados (JSON) se guardan en `logs/clientes_proveedores_YYYY-MM-DD.log`.
+
+## 📊 Sistema de Logging
+
+| Destino | Nivel | Formato |
+| --- | --- | --- |
+| Consola (stderr) | DEBUG | Texto coloreado con timestamp |
+| `logs/clientes_proveedores_YYYY-MM-DD.log` | INFO | JSON estructurado (rotación cada 10 MB) |
 
 ## 📝 Notas Técnicas
 
 * El campo contable inyectado para los días de pago utiliza el parámetro técnico `nb_days` y el valor `percent` al 100%, garantizando la compatibilidad con Odoo 15, 16 y 17.
 * Los registros se documentan automáticamente en el campo `comment` (Notas Internas) con las fechas de alta originales para preservar el histórico de la empresa.
+* Si las variables de entorno requeridas no están presentes, el script termina con `sys.exit(1)` y un mensaje de error crítico.
+
+---
 
 # Advanced Contact Importer for Odoo
+
 **Author:** BenjaminDTS
 
 Python module designed for the bulk, intelligent, and secure migration of data from Excel/CSV files (Customers and Suppliers) to the Odoo ERP system using its XML-RPC API.
@@ -66,63 +110,94 @@ Python module designed for the bulk, intelligent, and secure migration of data f
 ## 🚀 Main Features
 
 * **Intelligent Role Merging:** Prevents duplicate records. If a Contact exists as a Customer and is processed again as a Supplier, the script merges both profiles (`customer_rank` and `supplier_rank`) into the same record.
-
 * **Automatic Payment Term Management:** Reads the text from the Excel file (e.g., "GIRO 60") and automatically creates/assigns the accounting rule in Odoo (`account.payment.term`). Includes a security filter that ignores anomalous numbers or incorrect IBANs.
-
-* **Fallback:** If Odoo rejects a contact because the VAT number is invalid according to tax regulations, the script retrieves the VAT number, saves it in Internal Notes, and creates the record anyway to avoid losing the data.
-
 * **Automatic Archiving:** Detects if the `DATE OF TERMINATION` cell contains data and automatically archives the contact (`active = False`).
-
 * **Regional Encoding:** Prepared with `latin-1` encoding to process Spanish characters (ñ, accents) from older Excel exports without errors.
+* **Structured Logging:** Uses `loguru` with dual output — colored console and rotating JSON file in `logs/`.
 
-## ⚙️ Prerequisites
+## 🛠️ Requirements and Installation
 
-Make sure you have Python installed on your system. The script uses native libraries, so it is not necessary to install external dependencies (`pip install`).
+```bash
+pip install -r requirements.txt
+```
+
+Dependencies:
 
 * `xmlrpc.client` (Native)
-* `csv` (Native)
-* `re` (Native)
+* `csv`, `re` (Native)
+* `loguru>=0.7.0`
+* `python-dotenv>=1.0.0`
 
 ## 📂 File Structure
 
-For the script to work correctly, the files must be in the same directory:
-
 ```text
-/project_directory
-│-- contact_importer.py
-
-│-- Clients.csv (Delimited by ';')
-
-│-- SUPPLIERS.csv (Delimited by ',' or ';')
-
-│-- README.md
-
+/upload_customers_suppliers_odoo
+ ├── proveedor_cliente.py
+ ├── .env.example
+ ├── .env              ← create from .env.example (do not commit)
+ ├── requirements.txt
+ ├── Clientes.csv      (semicolon-delimited)
+ ├── PROVEEDORES.csv   (comma-delimited)
+ └── README.md
 ```
 
-## 🔧 Configuration
+## ⚙️ Configuration via `.env`
 
-Before running, open `contact_importer.py` and edit the following variables in the file header with your environment data:
+This module uses **environment variables** to manage Odoo credentials. Never edit credentials directly in the source code.
 
-```python
-URL = '[https://yourdomain.com](https://yourdomain.com)'
-DB = 'database_name'
-USERNAME = 'your_email@example.com'
-PASSWORD = 'your_password_or_api_key'
+### Steps
 
-```
+1. Copy the template file:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Open `.env` and fill in the values:
+
+   ```env
+   ODOO_URL=https://your-domain.odoo.com
+   ODOO_DB=your_database_name
+   ODOO_USERNAME=your_user@company.com
+   ODOO_PASSWORD=your_secure_password
+
+   # Optional
+   ARCHIVO_CLIENTES=Clientes.csv
+   ARCHIVO_PROVEEDORES=PROVEEDORES.csv
+   ENCODING_CSV=latin-1
+   ```
+
+> **Never commit the `.env` file to version control.**
+
+### Available variables
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `ODOO_URL` | YES | — | URL of your Odoo instance |
+| `ODOO_DB` | YES | — | Database name |
+| `ODOO_USERNAME` | YES | — | Odoo user |
+| `ODOO_PASSWORD` | YES | — | User password |
+| `ARCHIVO_CLIENTES` | NO | `Clientes.csv` | Customer CSV (`;` delimiter) |
+| `ARCHIVO_PROVEEDORES` | NO | `PROVEEDORES.csv` | Supplier CSV (`,` delimiter) |
+| `ENCODING_CSV` | NO | `latin-1` | CSV file encoding |
 
 ## 💻 Usage
 
-Open your terminal or command prompt, navigate to the project folder, and run:
-
 ```bash
-python contact_importer.py
+python proveedor_cliente.py
 ```
 
-The script will display a real-time console log of each action: creations `[+]`, role updates `[UPDT]`, security alerts `[!]`, and errors `[-]`.
+The script logs every action in real time via `loguru`. Structured logs (JSON) are saved to `logs/clientes_proveedores_YYYY-MM-DD.log`.
 
+## 📊 Logging System
+
+| Destination | Level | Format |
+| --- | --- | --- |
+| Console (stderr) | DEBUG | Colored text with timestamp |
+| `logs/clientes_proveedores_YYYY-MM-DD.log` | INFO | Structured JSON (rotation every 10 MB) |
 
 ## 📝 Technical Notes
 
-* The injected accounting field for paydays uses the technical parameter `nb_days` and the value `percent` at 100%, ensuring compatibility with Odoo 15, 16, and 17.
+* The injected accounting field for payment days uses the technical parameter `nb_days` and the value `percent` at 100%, ensuring compatibility with Odoo 15, 16, and 17.
 * Records are automatically documented in the `comment` field (Internal Notes) with the original creation dates to preserve the company's historical data.
+* If required environment variables are missing, the script exits with `sys.exit(1)` and a critical error message.

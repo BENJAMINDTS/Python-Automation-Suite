@@ -5,18 +5,19 @@ Módulo avanzado de procesamiento de lenguaje natural desarrollado por **Benjami
 ## 📋 Descripción
 
 Este script está diseñado para procesar inventarios enormes (miles de filas) de forma autónoma, inyectando descripciones atractivas para e-commerce. Cuenta con un sistema de arquitectura resiliente:
+
 * **Rotación de Modelos (Fallback):** Si un modelo agota su cuota de *Tokens Per Day* (TPD) o es retirado por Groq, el script salta automáticamente al siguiente modelo de la lista sin detener el proceso.
-* **Control de Rate Limits:** Detecta errores 429 (Límite de peticiones por minuto) y aplica pausas estratégicas de 15 segundos para enfriar la API.
+* **Control de Rate Limits:** Detecta errores 429 (Límite de peticiones por minuto) y aplica pausas estratégicas de 20 segundos para enfriar la API.
 * **Tolerancia a Fallos y Reanudación:** Guarda el progreso en disco lote por lote. Si el proceso se interrumpe, al reiniciarlo detectará qué productos ya están listos y continuará exactamente donde se quedó.
 * **Marcado de Errores:** Ninguna fila se pierde. Si la IA falla repetidamente con un producto, se etiqueta como `ERROR_IA` para su revisión manual.
+* **Logging Estructurado:** Usa `loguru` con doble salida — consola coloreada y archivo JSON rotativo en `logs/` compatible con Datadog/Loki/CloudWatch.
 
 ## 🛠️ Requisitos e Instalación
 
-Este script requiere librerías externas para la manipulación de datos y la conexión con la API.
-
 Instala todas las dependencias con el archivo incluido:
+
 ```bash
-pip install -r requeriments.txt
+pip install -r requirements.txt
 ```
 
 O manualmente solo las de ejecución:
@@ -31,37 +32,75 @@ pip install pandas groq tqdm loguru pydantic pydantic-settings
 pip install mkdocs mkdocs-material mkdocstrings[python]
 ```
 
+## ⚙️ Configuración mediante `.env`
+
+Este módulo usa **variables de entorno** para gestionar credenciales y parámetros. Nunca edites las credenciales directamente en el código fuente.
+
+### Pasos
+
+1. Copia el archivo de plantilla:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Abre `.env` y rellena los valores:
+
+   ```env
+   # [REQUERIDO] Clave de autenticación para la API de Groq
+   GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxx
+
+   # [OPCIONAL] Productos por lote enviado a la IA (por defecto: 10)
+   BATCH_SIZE=10
+
+   # [OPCIONAL] Nombre del archivo CSV de salida
+   ARCHIVO_SALIDA=catalogo_con_descripciones.csv
+   ```
+
+3. Asegúrate de que `.env` está en `.gitignore` (ya está incluido por defecto).
+
+> **Nunca subas el archivo `.env` al control de versiones.**
+
+### Variables disponibles
+
+| Variable | Requerida | Por defecto | Descripción |
+| --- | --- | --- | --- |
+| `GROQ_API_KEY` | SÍ | — | Clave API de Groq. Obtén la tuya en [console.groq.com](https://console.groq.com) |
+| `BATCH_SIZE` | NO | `10` | Productos por lote enviado a la IA |
+| `ARCHIVO_SALIDA` | NO | `catalogo_con_descripciones.csv` | Nombre del CSV de resultados |
+
 ## 📄 Especificaciones del Archivo de Entrada
 
 El archivo origen (Excel o CSV) debe contener obligatoriamente las siguientes columnas:
 
 | Cabecera | Requerido | Función |
 | --- | --- | --- |
-| **Código** | SÍ | Identificador único del producto (ID interno). |
-| **Producto** | SÍ | Nombre del artículo para darle contexto a la IA. |
-| **Departamento** | NO | Categoría (ej: "Perros", "Gatos"). Vital para mejorar la precisión del Copywriter. |
-
-## ⚙️ Guía de Configuración
-
-Antes de ejecutar el script, edita el bloque principal al final del archivo `.py`:
-
-1. **API Key:** Sustituye `"TU_API_KEY_AQUI"` por tu clave real generada en la consola de Groq.
-2. **Archivo Origen:**
-Asegúrate de que la variable `ARCHIVO` coincide con el nombre de tu archivo (ej: `inventario.xlsx` o `datos.csv`).
-3. **Modelos Preferidos (Opcional):**
-La variable global `MODELOS_DISPONIBLES` contiene la jerarquía de rotación. El script siempre intentará usar el primero de la lista y bajará posiciones en caso de error.
+| **Id** | SÍ | Identificador único del producto. |
+| **Label** | SÍ | Nombre del artículo para darle contexto a la IA. |
+| **Categoria** | NO | Especie/segmento (ej: "Perros", "Gatos"). Mejora la precisión del copywriter. |
+| **Marca** | NO | Marca del producto. Si es "Generica" no se incluye en el prompt. |
 
 ## 🚀 Cómo ponerlo en marcha
 
 1. Coloca tu archivo de inventario en el mismo directorio que el script.
-2. Ejecuta el script desde tu terminal:
+2. Configura el archivo `.env` con tu clave de Groq.
+3. Edita la variable `ARCHIVO` en el bloque `__main__` de `descripcion.py` con el nombre de tu archivo.
+4. Ejecuta el script:
 
 ```bash
 python descripcion.py
-
 ```
 
-**Resultado:** Verás una barra de progreso (`tqdm`) indicando el avance. Al finalizar, se generará un archivo llamado `inventario_con_descripciones.csv` con dos nuevas columnas: `Desc_Corta` (gancho comercial) y `Desc_Larga` (beneficios SEO).
+**Resultado:** Verás una barra de progreso (`tqdm`) indicando el avance. Los logs estructurados se guardan en `logs/proceso_YYYY-MM-DD.log`. Al finalizar, se generará el CSV de salida con dos nuevas columnas: `Descripción corta` y `Description`.
+
+## 📊 Sistema de Logging
+
+Los logs se escriben en dos destinos simultáneamente:
+
+| Destino | Nivel | Formato |
+| --- | --- | --- |
+| Consola (stderr) | DEBUG | Texto coloreado con timestamp |
+| `logs/proceso_YYYY-MM-DD.log` | INFO | JSON estructurado (rotación cada 10 MB) |
 
 ## 📝 Notas de Autoría y Documentación
 
@@ -79,18 +118,17 @@ Advanced natural language processing module developed by **BenjaminDTS** for the
 This script is designed to process huge inventories (thousands of rows) autonomously, injecting attractive descriptions for e-commerce. It features a resilient architecture system:
 
 * **Model Rotation (Fallback):** If a model exhausts its *Tokens Per Day* (TPD) quota or is decommissioned by Groq, the script automatically jumps to the next model on the list without stopping the process.
-* **Rate Limits Control:** Detects 429 errors (Requests per minute limit) and applies strategic 15-second pauses to cool down the API.
+* **Rate Limits Control:** Detects 429 errors (Requests per minute limit) and applies strategic 20-second pauses to cool down the API.
 * **Fault Tolerance and Resumption:** Saves progress to disk batch by batch. If the process is interrupted, restarting it will detect which products are already finished and continue exactly where it left off.
 * **Error Tagging:** No row is lost. If the AI repeatedly fails with a product, it is tagged as `ERROR_IA` for manual review.
+* **Structured Logging:** Uses `loguru` with dual output — colored console and rotating JSON file in `logs/` compatible with Datadog/Loki/CloudWatch.
 
 ## 🛠️ Requirements and Installation
-
-This script requires external libraries for data manipulation and API connection.
 
 Install all dependencies using the included file:
 
 ```bash
-pip install -r requeriments.txt
+pip install -r requirements.txt
 ```
 
 Or manually, only the runtime ones:
@@ -105,37 +143,75 @@ pip install pandas groq tqdm loguru pydantic pydantic-settings
 pip install mkdocs mkdocs-material mkdocstrings[python]
 ```
 
+## ⚙️ Configuration via `.env`
+
+This module uses **environment variables** to manage credentials and parameters. Never edit credentials directly in the source code.
+
+### Steps
+
+1. Copy the template file:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Open `.env` and fill in the values:
+
+   ```env
+   # [REQUIRED] Groq API authentication key
+   GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxx
+
+   # [OPTIONAL] Products per batch sent to the AI (default: 10)
+   BATCH_SIZE=10
+
+   # [OPTIONAL] Output CSV filename
+   ARCHIVO_SALIDA=catalogo_con_descripciones.csv
+   ```
+
+3. Make sure `.env` is in `.gitignore` (already included by default).
+
+> **Never commit the `.env` file to version control.**
+
+### Available variables
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `GROQ_API_KEY` | YES | — | Groq API key. Get yours at [console.groq.com](https://console.groq.com) |
+| `BATCH_SIZE` | NO | `10` | Products per batch sent to the AI |
+| `ARCHIVO_SALIDA` | NO | `catalogo_con_descripciones.csv` | Output CSV filename |
+
 ## 📄 Input File Specifications
 
 The source file (Excel or CSV) must contain the following columns:
 
 | Header | Required | Function |
 | --- | --- | --- |
-| **Código** (Code) | YES | Unique product identifier (Internal ID). |
-| **Producto** (Product) | YES | Item name to provide context to the AI. |
-| **Departamento** (Category) | NO | Category (e.g., "Dogs", "Cats"). Vital to improve Copywriter accuracy. |
-
-## ⚙️ Configuration Guide
-
-Before running the script, edit the main block at the bottom of the `.py` file:
-
-1. **API Key:** Replace `"TU_API_KEY_AQUI"` with your real key generated in the Groq console.
-2. **Source File:**
-Ensure the `ARCHIVO` variable matches the name of your file (e.g., `inventory.xlsx` or `data.csv`).
-3. **Preferred Models (Optional):**
-The global variable `MODELOS_DISPONIBLES` contains the rotation hierarchy. The script will always try to use the first one on the list and move down in case of error.
+| **Id** | YES | Unique product identifier. |
+| **Label** | YES | Item name to provide context to the AI. |
+| **Categoria** | NO | Species/segment (e.g., "Dogs", "Cats"). Improves copywriter accuracy. |
+| **Marca** | NO | Product brand. If "Generica", it is excluded from the prompt. |
 
 ## 🚀 How to get it up and running
 
 1. Place your inventory file in the same directory as the script.
-2. Run the script from your terminal:
+2. Configure the `.env` file with your Groq API key.
+3. Edit the `ARCHIVO` variable in the `__main__` block of `descripcion.py` with your filename.
+4. Run the script:
 
 ```bash
 python descripcion.py
-
 ```
 
-**Result:** You will see a progress bar (`tqdm`) indicating the advance. Upon completion, a file named `inventario_con_descripciones.csv` will be generated with two new columns: `Desc_Corta` (commercial hook) and `Desc_Larga` (SEO benefits).
+**Result:** You will see a progress bar (`tqdm`) indicating the advance. Structured logs are saved in `logs/proceso_YYYY-MM-DD.log`. Upon completion, the output CSV will be generated with two new columns: `Descripción corta` and `Description`.
+
+## 📊 Logging System
+
+Logs are written to two destinations simultaneously:
+
+| Destination | Level | Format |
+| --- | --- | --- |
+| Console (stderr) | DEBUG | Colored text with timestamp |
+| `logs/proceso_YYYY-MM-DD.log` | INFO | Structured JSON (rotation every 10 MB) |
 
 ## 📝 Authorship and Documentation Notes
 

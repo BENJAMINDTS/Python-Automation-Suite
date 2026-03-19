@@ -10,56 +10,80 @@ Realiza una doble inyección de precios mediante XML-RPC:
 
 import csv
 import xmlrpc.client
+import os
+import sys
+from dotenv import load_dotenv
+from loguru import logger
 
-# ==========================================
-# CONFIGURACIÓN DE ODOO
-# ==========================================
-URL = 'http://localhost:8069'
-DB = 'nombre_de_tu_base_de_datos'
-USERNAME = 'tu_usuario'
-PASSWORD = 'tu_contraseña'
+load_dotenv()
 
-ARCHIVO_TARIFAS = 'nombre_del_archivo.csv'
-COLUMNA_SIN_IVA = 'nombre_del_campo_sin_iva'
-COLUMNA_CON_IVA = 'nombre_del_campo_con_iva'
-NOMBRE_TARIFA_ODOO = 'Tarifa PVP (Con IVA)'
+# Logger estructurado
+logger.remove()
+os.makedirs("logs", exist_ok=True)
+logger.add(
+    sys.stderr,
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level:<8} | {message}",
+    level="DEBUG",
+    colorize=True,
+)
+logger.add(
+    "logs/precios_{time:YYYY-MM-DD}.log",
+    format="{time} | {level} | {message}",
+    level="INFO",
+    rotation="10 MB",
+    serialize=True,
+)
+
+# Configuración desde variables de entorno
+URL                 = os.environ.get("ODOO_URL", "http://localhost:8069")
+DB                  = os.environ.get("ODOO_DB", "")
+USERNAME            = os.environ.get("ODOO_USERNAME", "")
+PASSWORD            = os.environ.get("ODOO_PASSWORD", "")
+ARCHIVO_TARIFAS     = os.environ.get("ARCHIVO_TARIFAS", "nombre_del_archivo.csv")
+COLUMNA_SIN_IVA     = os.environ.get("COLUMNA_SIN_IVA", "nombre_del_campo_sin_iva")
+COLUMNA_CON_IVA     = os.environ.get("COLUMNA_CON_IVA", "nombre_del_campo_con_iva")
+NOMBRE_TARIFA_ODOO  = os.environ.get("NOMBRE_TARIFA_ODOO", "Tarifa PVP (Con IVA)")
 
 # ==========================================
 # 1. ORQUESTACIÓN PRINCIPAL
 # ==========================================
 
-def ejecutar_actualizacion_doble():
+def ejecutar_actualizacion_doble() -> None:
     """
     Controlador principal del módulo.
-    
+
     Orquesta el flujo de ejecución: valida la conexión, carga las estructuras
     de datos en memoria caché y lanza el procesamiento del archivo CSV.
-    
+
     :return: None
     """
+    if not all([DB, USERNAME, PASSWORD]):
+        logger.critical("Variables de entorno de Odoo incompletas. Revisa el archivo .env.")
+        sys.exit(1)
+
     uid = conectar_odoo()
     if not uid: return
     models = xmlrpc.client.ServerProxy(f'{URL}/xmlrpc/2/object')
 
-    print("\n[1/3] Descargando mapa de productos a la memoria caché...")
+    logger.info("Descargando mapa de productos a caché.")
     cache_productos = pre_cargar_productos(uid, models)
-    
-    print("\n[2/3] Preparando entorno de Tarifas Visuales...")
+
+    logger.info("Preparando entorno de tarifas visuales.")
     tarifa_id = obtener_o_crear_tarifa_b2c(uid, models)
     cache_reglas = pre_cargar_reglas(uid, models, tarifa_id)
 
-    print(f"\n[3/3] Procesando archivo de Excel ({ARCHIVO_TARIFAS})...")
+    logger.info("Procesando archivo de tarifas.", archivo=ARCHIVO_TARIFAS)
     procesar_csv_doble(uid, models, cache_productos, tarifa_id, cache_reglas)
-    print("\n[OK] Actualización Híbrida de Precios finalizada con éxito.")
+    logger.info("Actualización híbrida de precios finalizada.")
 
 # ==========================================
 # 2. LÓGICA DE ACTUALIZACIÓN
 # ==========================================
 
-def procesar_csv_doble(uid, models, cache_productos, tarifa_id, cache_reglas):
+def procesar_csv_doble(uid: int, models, cache_productos: dict[str, int], tarifa_id: int, cache_reglas: dict[tuple[int, int], int]) -> None:
     """
     Abre y recorre el archivo CSV, delegando la actualización línea por línea.
-    
+
     :param uid: int. Identificador del usuario de Odoo autenticado.
     :param models: xmlrpc.client.ServerProxy. Instancia de conexión a los modelos.
     :param cache_productos: dict. Mapa en memoria {codigo_producto: id_producto}.
@@ -72,23 +96,23 @@ def procesar_csv_doble(uid, models, cache_productos, tarifa_id, cache_reglas):
     try:
         with open(ARCHIVO_TARIFAS, mode='r', encoding='utf-8-sig', errors='ignore') as f:
             reader = inicializar_lector_csv(f)
-            
+
             for fila in reader:
                 stats['lineas'] += 1
                 if stats['lineas'] % 100 == 0:
-                    print(f"  ... Leyendo línea {stats['lineas']} ...")
-                
+                    logger.debug("Progreso de lectura.", linea=stats['lineas'])
+
                 procesar_fila(uid, models, fila, cache_productos, tarifa_id, cache_reglas, stats)
 
     except FileNotFoundError:
-        print(f"[!] Archivo no encontrado: {ARCHIVO_TARIFAS}")
-    
+        logger.error("Archivo no encontrado.", archivo=ARCHIVO_TARIFAS)
+
     imprimir_resumen(stats)
 
-def procesar_fila(uid, models, fila, cache_productos, tarifa_id, cache_reglas, stats):
+def procesar_fila(uid: int, models, fila: dict, cache_productos: dict[str, int], tarifa_id: int, cache_reglas: dict[tuple[int, int], int], stats: dict[str, int]) -> None:
     """
     Analiza una fila individual del CSV y ejecuta las inyecciones de precio.
-    
+
     :param uid: int. Identificador del usuario.
     :param models: xmlrpc.client.ServerProxy. Conexión a los modelos de Odoo.
     :param fila: dict. Diccionario con los datos de la fila actual del CSV.
@@ -104,15 +128,15 @@ def procesar_fila(uid, models, fila, cache_productos, tarifa_id, cache_reglas, s
     if codigo not in cache_productos:
         stats['no_encontrados'] += 1
         return
-    
+
     prod_id = cache_productos[codigo]
     actualizar_precio_base(uid, models, fila, prod_id, stats)
     actualizar_regla_tarifa(uid, models, fila, prod_id, tarifa_id, cache_reglas, stats)
 
-def actualizar_precio_base(uid, models, fila, prod_id, stats):
+def actualizar_precio_base(uid: int, models, fila: dict, prod_id: int, stats: dict[str, int]) -> None:
     """
     Inyecta el precio sin IVA en la ficha contable del producto ('list_price').
-    
+
     :param uid: int. Identificador del usuario.
     :param models: xmlrpc.client.ServerProxy. Conexión a modelos de Odoo.
     :param fila: dict. Fila actual del archivo CSV.
@@ -125,10 +149,10 @@ def actualizar_precio_base(uid, models, fila, prod_id, stats):
         models.execute_kw(DB, uid, PASSWORD, 'product.template', 'write', [[prod_id], {'list_price': precio}])
         stats['base'] += 1
 
-def actualizar_regla_tarifa(uid, models, fila, prod_id, tarifa_id, cache_reglas, stats):
+def actualizar_regla_tarifa(uid: int, models, fila: dict, prod_id: int, tarifa_id: int, cache_reglas: dict[tuple[int, int], int], stats: dict[str, int]) -> None:
     """
     Crea o actualiza la regla de precio con IVA dentro de la tarifa B2C.
-    
+
     :param uid: int. Identificador del usuario.
     :param models: xmlrpc.client.ServerProxy. Conexión a modelos de Odoo.
     :param fila: dict. Fila actual del archivo CSV.
@@ -155,16 +179,16 @@ def actualizar_regla_tarifa(uid, models, fila, prod_id, tarifa_id, cache_reglas,
             cache_reglas[clave_regla] = nueva_id
             stats['reglas_c'] += 1
     except Exception as e:
-        print(f"[-] Error en tarifa (Regla {prod_id}): {e}")
+        logger.warning("Error actualizando regla de tarifa.", prod_id=prod_id, error=str(e))
 
 # ==========================================
 # 3. FUNCIONES AUXILIARES Y CACHÉ
 # ==========================================
 
-def inicializar_lector_csv(f):
+def inicializar_lector_csv(f) -> csv.DictReader:
     """
     Detecta automáticamente el delimitador del archivo y limpia las cabeceras.
-    
+
     :param f: TextIOWrapper. Archivo CSV abierto.
     :return: csv.DictReader. Lector iterador configurado.
     """
@@ -175,10 +199,10 @@ def inicializar_lector_csv(f):
     reader.fieldnames = [str(c).strip() for c in reader.fieldnames if c]
     return reader
 
-def pre_cargar_productos(uid, models):
+def pre_cargar_productos(uid: int, models) -> dict[str, int]:
     """
     Descarga un mapa en RAM de todos los productos de Odoo.
-    
+
     :param uid: int. Identificador del usuario.
     :param models: xmlrpc.client.ServerProxy. Conexión a modelos de Odoo.
     :return: dict. Formato {default_code (str): id_producto (int)}.
@@ -186,10 +210,10 @@ def pre_cargar_productos(uid, models):
     prods = models.execute_kw(DB, uid, PASSWORD, 'product.template', 'search_read', [[]], {'fields': ['id', 'default_code']})
     return {p['default_code']: p['id'] for p in prods if p.get('default_code')}
 
-def obtener_o_crear_tarifa_b2c(uid, models):
+def obtener_o_crear_tarifa_b2c(uid: int, models) -> int:
     """
     Localiza la lista de precios definida; si no existe, la crea.
-    
+
     :param uid: int. Identificador del usuario.
     :param models: xmlrpc.client.ServerProxy. Conexión a modelos de Odoo.
     :return: int. ID de la lista de precios (tarifa) en Odoo.
@@ -198,16 +222,16 @@ def obtener_o_crear_tarifa_b2c(uid, models):
     if existe: return existe[0]
     return models.execute_kw(DB, uid, PASSWORD, 'product.pricelist', 'create', [{'name': NOMBRE_TARIFA_ODOO}])
 
-def pre_cargar_reglas(uid, models, tarifa_id):
+def pre_cargar_reglas(uid: int, models, tarifa_id: int) -> dict[tuple[int, int], int]:
     """
     Descarga un mapa en RAM de todas las reglas de precio existentes en una tarifa.
-    
+
     :param uid: int. Identificador del usuario.
     :param models: xmlrpc.client.ServerProxy. Conexión a modelos de Odoo.
     :param tarifa_id: int. ID de la tarifa a consultar.
     :return: dict. Formato {(tarifa_id, producto_id): regla_id}.
     """
-    reglas = models.execute_kw(DB, uid, PASSWORD, 'product.pricelist.item', 'search_read', 
+    reglas = models.execute_kw(DB, uid, PASSWORD, 'product.pricelist.item', 'search_read',
                                [[('pricelist_id', '=', tarifa_id)]], {'fields': ['id', 'pricelist_id', 'product_tmpl_id']})
     cache = {}
     for r in reglas:
@@ -216,10 +240,10 @@ def pre_cargar_reglas(uid, models, tarifa_id):
             cache[(tarifa_id, t_id)] = r['id']
     return cache
 
-def limpiar_precio(valor):
+def limpiar_precio(valor) -> float:
     """
     Convierte el formato de texto extraído del CSV a un flotante apto para Odoo.
-    
+
     :param valor: str o float. Celda de precio en el CSV.
     :return: float. Precio validado y limpio (0.0 si es inválido o nulo).
     """
@@ -229,24 +253,26 @@ def limpiar_precio(valor):
     except ValueError:
         return 0.0
 
-def imprimir_resumen(stats):
+def imprimir_resumen(stats: dict[str, int]) -> None:
     """
-    Muestra en consola las métricas recolectadas durante la ejecución.
-    
+    Emite mediante el logger las métricas recolectadas durante la ejecución.
+
     :param stats: dict. Diccionario conteniendo los recuentos del proceso.
     :return: None
     """
-    print(f"\n--- RESUMEN DE LA ACTUALIZACIÓN ---")
-    print(f"Líneas procesadas: {stats['lineas']}")
-    print(f"Precios Base (Sin IVA) actualizados: {stats['base']}")
-    print(f"Reglas visuales (Con IVA) creadas: {stats['reglas_c']}")
-    print(f"Reglas visuales (Con IVA) actualizadas: {stats['reglas_u']}")
-    print(f"Productos omitidos (No encontrados): {stats['no_encontrados']}")
+    logger.info(
+        "Resumen de actualización.",
+        lineas=stats['lineas'],
+        base=stats['base'],
+        reglas_creadas=stats['reglas_c'],
+        reglas_actualizadas=stats['reglas_u'],
+        no_encontrados=stats['no_encontrados'],
+    )
 
-def conectar_odoo():
+def conectar_odoo() -> int | bool:
     """
     Establece la conexión inicial con el servidor vía XML-RPC.
-    
+
     :return: int o bool. UID del usuario autenticado o False si ocurre un error.
     """
     try:
@@ -255,7 +281,7 @@ def conectar_odoo():
         if uid: return uid
     except Exception:
         pass
-    print("[!] Error de conexión o credenciales.")
+    logger.error("Error de conexión o credenciales.")
     return False
 
 if __name__ == "__main__":

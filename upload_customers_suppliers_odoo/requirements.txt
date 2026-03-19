@@ -1,0 +1,4 @@
+# upload_customers_suppliers_odoo — Dependencias
+# Solo usa librería estándar de Python + loguru para logging
+loguru>=0.7.0
+python-dotenv>=1.0.0

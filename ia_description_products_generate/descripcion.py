@@ -434,12 +434,10 @@ def procesar_catalogo(archivo_entrada: str, config: ConfiguracionEntorno) -> Non
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    MI_API_KEY = "TU_GROQ_API_KEY_AQUI"
+    # Ruta al archivo CSV/XLSX de entrada. Configura este valor antes de ejecutar
+    # o pásalo como argumento. La API key y demás parámetros se leen desde .env
+    # (copia .env.example a .env y rellena los valores reales).
     ARCHIVO = "tu_inventario.csv"
-
-    # La clave debe estar en el entorno ANTES de instanciar ConfiguracionEntorno,
-    # ya que BaseSettings lee las variables en el momento de la construcción.
-    os.environ["GROQ_API_KEY"] = MI_API_KEY
 
     config = cargar_configuracion()
 

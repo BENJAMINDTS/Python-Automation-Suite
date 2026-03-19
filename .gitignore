@@ -36,3 +36,6 @@ site/
 .vscode/
 .idea/
 *.swp
+
+#IA
+./claude

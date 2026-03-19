@@ -1,5 +1,5 @@
 # ==========================================================
-# IMPORTANTE: El script principal funciona con librerías 
+# IMPORTANTE: El script principal funciona con librerías
 # nativas de Python (xmlrpc.client, csv, base64, os).
 # No requiere instalación de dependencias para ejecutarse.
 # ==========================================================
@@ -8,3 +8,7 @@
 mkdocs>=1.5.0
 mkdocs-material>=9.0.0
 mkdocstrings[python]>=0.24.0
+
+# Dependencias de ejecución:
+loguru>=0.7.0
+python-dotenv>=1.0.0

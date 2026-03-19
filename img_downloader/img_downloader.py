@@ -6,7 +6,7 @@ usando un pool de hilos. El navegador (productor) extrae URLs; los workers
 HTTP (consumidores) descargan y validan cada imagen sin bloquear la búsqueda.
 Resultado esperado: 3-5x más rápido que una versión secuencial.
 
-Configura las constantes del bloque CONFIGURACIÓN antes de ejecutar.
+Configura las variables de entorno (ver .env.example) antes de ejecutar.
 
 :author: BenjaminDTS
 :version: 1.2.0
@@ -33,23 +33,48 @@ try:
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
 except ImportError as err:
+    # Fallo crítico: sin las dependencias de Selenium no hay productor de URLs.
+    # Se imprime con print porque loguru todavía no está inicializado.
     print(f"[!] Dependencia faltante: {err}")
     sys.exit(1)
 
+from loguru import logger
+
+# ─── LOGGING ──────────────────────────────────────────────────────────────────
+# El directorio de logs debe existir antes de que loguru intente escribir en él.
+os.makedirs("logs", exist_ok=True)
+
+logger.remove()
+logger.add(
+    sys.stderr,
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level:<8} | {message}",
+    level="DEBUG",
+    colorize=True,
+)
+logger.add(
+    "logs/img_downloader_{time:YYYY-MM-DD}.log",
+    format="{time} | {level} | {message}",
+    level="INFO",
+    rotation="10 MB",
+    serialize=True,
+)
+
 
 # ─── CONFIGURACIÓN ────────────────────────────────────────────────────────────
+# Las constantes se leen de variables de entorno para no hardcodear valores
+# sensibles ni dependientes del entorno. Los valores actuales son los defaults.
 
 # Parámetros de descarga
-WORKERS_DESCARGA  = 6      # Hilos paralelos de descarga (sube si tienes buena conexión)
-RESOLUCION_MINIMA = 200    # Píxeles mínimos (ancho y alto) para aceptar una imagen
-DELAY_NAVEGADOR   = 1.2    # Segundos entre búsquedas en Bing (no bajar de 1.0)
-TIMEOUT_IMAGEN    = 12     # Segundos máximos por request HTTP de imagen
-MAX_INTENTOS_URL  = 5      # Resultados de Bing a probar por producto
+WORKERS_DESCARGA  = int(os.environ.get("WORKERS_DESCARGA", "6"))
+RESOLUCION_MINIMA = int(os.environ.get("RESOLUCION_MINIMA", "200"))
+DELAY_NAVEGADOR   = float(os.environ.get("DELAY_NAVEGADOR", "1.2"))
+TIMEOUT_IMAGEN    = int(os.environ.get("TIMEOUT_IMAGEN", "12"))
+MAX_INTENTOS_URL  = int(os.environ.get("MAX_INTENTOS_URL", "5"))
 COLA_MAX          = 50     # Tamaño máximo de la cola entre productor y consumidores
 
 # Archivos
-ARCHIVO_CSV       = "tu_inventario.csv"      # Nombre del CSV de entrada
-DIRECTORIO_SALIDA = "imagenes_descargadas"   # Carpeta donde se guardan las imágenes
+ARCHIVO_CSV       = os.environ.get("ARCHIVO_CSV", "tu_inventario.csv")
+DIRECTORIO_SALIDA = os.environ.get("DIRECTORIO_SALIDA", "imagenes_descargadas")
 LOG_MINIATURAS    = "registro_miniaturas.txt"
 LOG_ERRORES       = "productos_sin_imagen.txt"
 
@@ -104,18 +129,18 @@ def ejecutor_rapido(archivo_csv: str = ARCHIVO_CSV) -> None:
         f"\n--- NUEVA EJECUCIÓN: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n",
     )
 
-    print("=" * 65)
-    print("  DESCARGADOR MASIVO DE IMÁGENES — PRODUCTOR/CONSUMIDOR")
-    print(f"  Hilos de descarga paralela : {WORKERS_DESCARGA}")
-    print(f"  Carpeta de salida          : {DIRECTORIO_SALIDA}/")
-    print("=" * 65)
+    logger.info("=" * 65)
+    logger.info("  DESCARGADOR MASIVO DE IMÁGENES — PRODUCTOR/CONSUMIDOR")
+    logger.info(f"  Hilos de descarga paralela : {WORKERS_DESCARGA}")
+    logger.info(f"  Carpeta de salida          : {DIRECTORIO_SALIDA}/")
+    logger.info("=" * 65)
 
     ruta_csv  = _resolver_csv(archivo_csv)
     productos = _cargar_productos(ruta_csv, DIRECTORIO_SALIDA)
-    print(f"[i] Productos a procesar: {len(productos)}")
+    logger.info(f"Productos a procesar: {len(productos)}")
 
     if not productos:
-        print("[i] Todas las imágenes ya existen. Nada que hacer.")
+        logger.info("Todas las imágenes ya existen. Nada que hacer.")
         return
 
     cola    = Queue(maxsize=COLA_MAX)
@@ -140,12 +165,12 @@ def ejecutor_rapido(archivo_csv: str = ARCHIVO_CSV) -> None:
                 pct = i / total * 100
                 codigo, nombre, marca, categoria = producto
 
-                print(f"[{i}/{total} {pct:.0f}%] Buscando: {nombre[:45]}...", end=" ", flush=True)
+                logger.debug(f"[{i}/{total} {pct:.0f}%] Buscando: {nombre[:45]}...")
 
                 urls = _extraer_urls_bing(driver, nombre, marca, categoria)
 
                 if urls:
-                    print(f"-> {len(urls)} URLs en cola")
+                    logger.debug(f"[{i}/{total}] {nombre[:45]} -> {len(urls)} URLs en cola")
                     cola.put({
                         "codigo":     codigo,
                         "nombre":     nombre,
@@ -153,7 +178,7 @@ def ejecutor_rapido(archivo_csv: str = ARCHIVO_CSV) -> None:
                         "output_dir": os.path.join(DIRECTORIO_SALIDA, f"{sanitizar(codigo)}.jpg"),
                     })
                 else:
-                    print("Sin URLs")
+                    logger.warning(f"Sin URLs para: {nombre[:45]} ({codigo})")
                     with lock:
                         stats["error"] += 1
                     _escribir_log(LOG_ERRORES, f"{codigo}\t{nombre}\n")
@@ -169,7 +194,7 @@ def ejecutor_rapido(archivo_csv: str = ARCHIVO_CSV) -> None:
             try:
                 f.result()
             except Exception as e:
-                print(f"[!] Worker error: {e}")
+                logger.error(f"Worker error inesperado: {e}")
 
     _imprimir_resumen(stats, time.time() - t_inicio)
 
@@ -177,7 +202,12 @@ def ejecutor_rapido(archivo_csv: str = ARCHIVO_CSV) -> None:
 # ═══════════════════════════════════════════════════════════════════════════════
 #  PRODUCTOR — extrae URLs desde Bing Images
 # ═══════════════════════════════════════════════════════════════════════════════
-def _extraer_urls_bing(driver, nombre: str, marca: str, categoria: str) -> list:
+def _extraer_urls_bing(
+    driver,
+    nombre: str,
+    marca: str,
+    categoria: str,
+) -> list[tuple[str, str]]:
     """
     Navega a Bing Images y extrae hasta MAX_INTENTOS_URL candidatos.
 
@@ -200,6 +230,8 @@ def _extraer_urls_bing(driver, nombre: str, marca: str, categoria: str) -> list:
                 EC.presence_of_element_located((By.CSS_SELECTOR, "a.iusc"))
             )
         except Exception:
+            # El timeout de espera explícita es normal cuando Bing no carga
+            # resultados en el límite de 4 s; se continúa igualmente.
             pass
 
         elementos = driver.find_elements(By.CSS_SELECTOR, "a.iusc")
@@ -221,14 +253,20 @@ def _extraer_urls_bing(driver, nombre: str, marca: str, categoria: str) -> list:
         return urls
 
     except Exception as e:
-        print(f"[!] Error Bing: {e}", end=" ")
+        logger.warning(f"Error al extraer URLs de Bing para '{nombre[:40]}': {e}")
         return []
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  CONSUMIDOR — descarga imágenes en paralelo
 # ═══════════════════════════════════════════════════════════════════════════════
-def _consumidor(cola, stats, lock, log_miniaturas: str, log_errores: str) -> None:
+def _consumidor(
+    cola: Queue,
+    stats: dict,
+    lock: threading.Lock,
+    log_miniaturas: str,
+    log_errores: str,
+) -> None:
     """
     Worker de descarga. Coge tareas de la cola y descarga imágenes via requests.
     No usa Selenium — es puro I/O de red, paralelizable sin problema.
@@ -260,11 +298,11 @@ def _consumidor(cola, stats, lock, log_miniaturas: str, log_errores: str) -> Non
         with lock:
             if exito:
                 stats["ok"] += 1
-                print(f"    OK: {os.path.basename(ruta_img)}")
+                logger.info(f"OK: {os.path.basename(ruta_img)}")
             else:
                 stats["error"] += 1
                 _escribir_log(log_errores, f"{codigo}\t{nombre}\n")
-                print(f"    Sin imagen: {codigo}")
+                logger.warning(f"Sin imagen: {codigo}")
 
         cola.task_done()
 
@@ -348,7 +386,7 @@ def _construir_query(nombre: str, marca: str, categoria: str) -> str:
 # ═══════════════════════════════════════════════════════════════════════════════
 #  UTILIDADES
 # ═══════════════════════════════════════════════════════════════════════════════
-def _cargar_productos(ruta_csv: str, output_dir: str) -> list:
+def _cargar_productos(ruta_csv: str, output_dir: str) -> list[tuple[str, str, str, str]]:
     """
     Lee el CSV, normaliza las cabeceras a mayúsculas y filtra los productos
     que ya tienen imagen descargada (reanudación automática).
@@ -382,7 +420,7 @@ def _cargar_productos(ruta_csv: str, output_dir: str) -> list:
     return productos
 
 
-def _iniciar_navegador():
+def _iniciar_navegador() -> uc.Chrome:
     """
     Inicia undetected_chromedriver usando el ejecutable configurado.
 
@@ -462,19 +500,19 @@ def _escribir_log(ruta: str, texto: str) -> None:
         pass
 
 
-def _imprimir_resumen(stats: dict, duracion: float) -> None:
+def _imprimir_resumen(stats: dict[str, int], duracion: float) -> None:
     """Imprime el resumen final de la ejecución."""
     total = stats['ok'] + stats['error']
     mins  = int(duracion // 60)
     segs  = int(duracion % 60)
     vpm   = total / (duracion / 60) if duracion > 0 else 0
-    print(f"\n{'='*65}")
-    print(f"  RESUMEN")
-    print(f"  Descargadas correctamente : {stats['ok']}")
-    print(f"  Sin imagen                : {stats['error']}")
-    print(f"  Tiempo total              : {mins}m {segs}s")
-    print(f"  Velocidad media           : {vpm:.1f} productos/minuto")
-    print(f"{'='*65}")
+    logger.info("=" * 65)
+    logger.info("  RESUMEN")
+    logger.info(f"  Descargadas correctamente : {stats['ok']}")
+    logger.info(f"  Sin imagen                : {stats['error']}")
+    logger.info(f"  Tiempo total              : {mins}m {segs}s")
+    logger.info(f"  Velocidad media           : {vpm:.1f} productos/minuto")
+    logger.info("=" * 65)
 
 
 if __name__ == "__main__":
